@@ -1,0 +1,571 @@
+/**
+ * @file fieldshield.css
+ * @description Styles for the FieldShield input component.
+ *
+ * @structure
+ *   1. Design tokens (CSS custom properties)
+ *   2. Container & label
+ *   3. Field wrapper & overlay layers
+ *   4. Real input (DOM-scrambling mode)
+ *   5. Accessibility mode input
+ *   6. Findings / warning region
+ *   7. Screen-reader utility
+ *   8. Unsafe (sensitive data detected) state
+ *   9. Focus management
+ *  10. Dark mode
+ *  11. High-contrast mode (forced-colors)
+ *  12. Reduced motion
+ *
+ * @customization
+ * Override any `--fieldshield-*` token in your own stylesheet or on a parent
+ * element — no need to fork this file:
+ *
+ * ```css
+ * .my-form {
+ *   --fieldshield-border-color: #6366f1;
+ *   --fieldshield-font-size: 1rem;
+ * }
+ * ```
+ *
+ * @accessibility
+ * - Focus rings meet WCAG 2.1 SC 1.4.11 (Non-text Contrast, 3:1 minimum).
+ * - `.fieldshield-sr-only` follows the canonical visually-hidden pattern and
+ *   remains accessible to assistive technologies.
+ * - `@media (forced-colors: active)` restores visible borders and focus
+ *   rings for Windows High Contrast / Contrast Themes users.
+ * - `@media (prefers-reduced-motion: reduce)` removes transitions for users
+ *   who have requested reduced motion at the OS level.
+ *
+ * @module fieldshield.css
+ */
+
+/* ─── 1. Design Tokens ──────────────────────────────────────────────────────
+ *
+ * All visual values are expressed as custom properties so consumers can
+ * theme the component without specificity battles.
+ * Tokens follow a `--fieldshield-{property}` naming convention.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Typography */
+  --fieldshield-font-family: inherit;
+  --fieldshield-font-size: 0.9375rem; /* 15px at default root font-size */
+  --fieldshield-line-height: 1.5;
+
+  /* Spacing */
+  --fieldshield-padding-y: 0.5rem; /* Vertical padding inside the field */
+  --fieldshield-padding-x: 0.75rem; /* Horizontal padding inside the field */
+  --fieldshield-gap: 0.375rem; /* Space between label and field */
+  --fieldshield-findings-gap: 0.375rem; /* Space between warning text and tags */
+
+  /* Sizing */
+  --fieldshield-min-height: 2.5rem; /* 40px — comfortable tap target */
+  --fieldshield-border-radius: 0.375rem; /* 6px */
+  --fieldshield-tag-border-radius: 0.25rem; /* 4px */
+
+  /* Colors — light mode */
+  --fieldshield-bg: #ffffff;
+  --fieldshield-border-color: #d1d5db; /* Tailwind gray-300 */
+  --fieldshield-border-color-focus: #3b82f6; /* Tailwind blue-500 */
+  --fieldshield-text-color: #111827; /* Tailwind gray-900 */
+  --fieldshield-placeholder-color: #9ca3af; /* Tailwind gray-400 */
+  --fieldshield-label-color: #374151; /* Tailwind gray-700 */
+  --fieldshield-caret-color: #111827;
+
+  /* Unsafe state — activated when sensitive patterns are detected */
+  --fieldshield-unsafe-border-color: #f59e0b; /* Tailwind amber-400 */
+  --fieldshield-unsafe-bg: #fffbeb; /* Tailwind amber-50 */
+  --fieldshield-unsafe-focus-ring: #f59e0b;
+  --fieldshield-warning-color: #92400e; /* Tailwind amber-800 */
+  --fieldshield-tag-bg: #fde68a; /* Tailwind amber-200 */
+  --fieldshield-tag-color: #78350f; /* Tailwind amber-900 */
+
+  /* Mask layer — the visible redacted text */
+  --fieldshield-mask-color: #111827;
+  --fieldshield-mask-blocked-color: #b45309; /* Tailwind amber-700 — █ chars */
+
+  /* Focus ring */
+  --fieldshield-focus-ring-width: 3px;
+  --fieldshield-focus-ring-offset: 2px;
+
+  /* Transition */
+  --fieldshield-transition-duration: 150ms;
+  --fieldshield-transition-easing: ease-in-out;
+}
+
+/* ─── 2. Container & Label ──────────────────────────────────────────────────
+ *
+ * The container stacks the label, field wrapper, and findings region
+ * vertically. Label and input are linked via `htmlFor`/`id` — do not
+ * alter the DOM order without verifying screen reader announcement order.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.fieldshield-container {
+  position: relative; /* Anchors .fieldshield-sr-only's position: absolute */
+  display: flex;
+  flex-direction: column;
+  gap: var(--fieldshield-gap);
+  width: 100%;
+  font-family: var(--fieldshield-font-family);
+  font-size: var(--fieldshield-font-size);
+  line-height: var(--fieldshield-line-height);
+}
+
+.fieldshield-label {
+  display: block;
+  color: var(--fieldshield-label-color);
+  font-weight: 500;
+  cursor: default;
+  user-select: none;
+}
+
+/* ─── 3. Field Wrapper & Overlay Layers ─────────────────────────────────────
+ *
+ * The wrapper is `position: relative` so the mask layer and real input can
+ * be stacked via `position: absolute` with identical inset values.
+ *
+ * Layer order (bottom → top):
+ *   1. fieldshield-mask-layer  — visible masked text, aria-hidden
+ *   2. fieldshield-real-input  — transparent, receives all events
+ *
+ * Both layers must share identical font metrics and padding so character
+ * positions align pixel-perfectly. Any font or padding mismatch will cause
+ * the cursor to appear offset from the displayed text.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.fieldshield-field-wrapper {
+  position: relative;
+  min-height: var(--fieldshield-min-height);
+  border: 1px solid var(--fieldshield-border-color);
+  border-radius: var(--fieldshield-border-radius);
+  background-color: var(--fieldshield-bg);
+  transition:
+    border-color var(--fieldshield-transition-duration)
+      var(--fieldshield-transition-easing),
+    background-color var(--fieldshield-transition-duration)
+      var(--fieldshield-transition-easing),
+    box-shadow var(--fieldshield-transition-duration)
+      var(--fieldshield-transition-easing);
+}
+
+/**
+ * Mask layer — purely visual, hidden from assistive technologies.
+ *
+ * Renders the masked output (`masked` from useFieldShield) as visible text.
+ * `pointer-events: none` ensures all clicks and drags pass through to the
+ * real input underneath. `white-space: pre-wrap` preserves spacing so
+ * multi-word values don't collapse.
+ */
+.fieldshield-mask-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center; /* Vertically centres text in single-line (input) mode */
+  padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
+  color: var(--fieldshield-mask-color);
+  font-family: var(--fieldshield-font-family);
+  font-size: var(--fieldshield-font-size);
+  line-height: var(--fieldshield-line-height);
+  white-space: pre-wrap;
+  word-break: break-all;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+/** Textarea mask layer — override flex centering so text flows from the top. */
+.fieldshield-field-wrapper:has(textarea) .fieldshield-mask-layer {
+  display: block;
+  align-items: normal;
+}
+
+/** █ block characters rendered in the unsafe accent color for visual clarity. */
+.fieldshield-mask-layer .fieldshield-blocked {
+  color: var(--fieldshield-mask-blocked-color);
+}
+
+/** Placeholder text inside the mask layer, styled to match native placeholders. */
+.fieldshield-placeholder {
+  color: var(--fieldshield-placeholder-color);
+  font-style: normal;
+}
+
+/**
+ * Unsafe mask state — applied to the mask layer div when sensitive patterns
+ * are detected. Changes the background colour to the unsafe amber tint so
+ * the visual warning is visible behind the masked text.
+ */
+.fieldshield-mask-unsafe {
+  background-color: var(--fieldshield-unsafe-bg);
+}
+
+/**
+ * Auto-grow mirror for textarea.
+ *
+ * A hidden div that mirrors the textarea's content so the CSS grid
+ * auto-sizing can measure the required height and expand the field wrapper.
+ * The wrapper uses `display: grid` with both the grow div and the real
+ * textarea/mask layer in the same grid area — whichever is taller wins,
+ * giving native auto-grow without JavaScript height calculations.
+ *
+ * `visibility: hidden` keeps it out of sight while still contributing
+ * to layout measurements. `white-space: pre-wrap` + `word-break: break-all`
+ * must match the textarea exactly so heights align.
+ */
+.fieldshield-grow {
+  /* Normal flow — this div's height determines the wrapper height.
+   * The absolute-positioned mask layer and textarea will fill that height.
+   * Must share identical font metrics and padding with the textarea so
+   * the heights match exactly. */
+  visibility: hidden;
+  display: block;
+  width: 100%;
+  min-height: var(--fieldshield-min-height);
+  padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
+  font-family: var(--fieldshield-font-family);
+  font-size: var(--fieldshield-font-size);
+  line-height: var(--fieldshield-line-height);
+  white-space: pre-wrap;
+  word-break: break-all;
+  pointer-events: none;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+/* ─── Textarea layout overrides ─────────────────────────────────────────────
+ *
+ * The default `position: absolute; inset: 0` approach works for `<input>`
+ * because the wrapper has a known fixed height. For `<textarea>`, the wrapper
+ * must grow with the content — absolute children have no height to fill if
+ * the wrapper has no defined height.
+ *
+ * Solution — the grow div sets the wrapper height:
+ *   1. `.fieldshield-grow` is in normal flow (not absolute). Its height is
+ *      driven by its text content, which mirrors the textarea content.
+ *      The wrapper's height is therefore determined by the grow div.
+ *   2. The mask layer and real textarea use `position: absolute; inset: 0`
+ *      as usual — they fill whatever height the grow div established.
+ *   3. `visibility: hidden` keeps the grow div invisible while it still
+ *      participates in layout.
+ *
+ * This is the "invisible twin" pattern — the grow div is an invisible
+ * ghost that holds space; the visible layers sit on top of it.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** Wrapper in textarea mode — overflow visible so grow div can set height. */
+.fieldshield-field-wrapper:has(textarea) {
+  overflow: visible;
+}
+
+/* ─── 4. Real Input (DOM-scrambling mode) ───────────────────────────────────
+ *
+ * The real input sits on top of the mask layer but is visually transparent.
+ * `color: transparent` hides the scrambled █ characters from sighted users
+ * while `caret-color` restores the cursor so users know where they are typing.
+ *
+ * `background: transparent` and `border: none` remove any browser default
+ * chrome — the wrapper's border is the visible border.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.fieldshield-real-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
+  font-family: var(--fieldshield-font-family);
+  font-size: var(--fieldshield-font-size);
+  line-height: var(--fieldshield-line-height);
+  color: transparent;
+  caret-color: var(--fieldshield-caret-color);
+  background: transparent;
+  border: none;
+  border-radius: var(--fieldshield-border-radius);
+  outline: none; /* Focus ring is applied on the wrapper via :focus-within */
+  resize: none;
+  cursor: text;
+}
+
+/**
+ * Selection override — keeps scrambled `x` characters invisible when the user
+ * highlights text. Without this, the browser's selection rendering ignores
+ * `color: transparent` and draws the x characters visibly inside the
+ * selection highlight.
+ *
+ * `color: transparent` hides the x characters.
+ * `background-color` provides a visible selection indicator so the user
+ * still sees that text is selected — just not what the DOM actually contains.
+ */
+.fieldshield-real-input::selection {
+  color: transparent;
+  background-color: color-mix(
+    in srgb,
+    var(--fieldshield-border-color-focus) 30%,
+    transparent
+  );
+}
+
+/* ─── 5. Accessibility Mode Input ───────────────────────────────────────────
+ *
+ * In a11yMode the component renders a standard `type="password"` input.
+ * No overlay is used — the browser's native masking handles visual output,
+ * and screen readers can interact with the field normally.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.fieldshield-a11y-input {
+  display: block;
+  width: 100%;
+  min-height: var(--fieldshield-min-height);
+  padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
+  font-family: var(--fieldshield-font-family);
+  font-size: var(--fieldshield-font-size);
+  line-height: var(--fieldshield-line-height);
+  color: var(--fieldshield-text-color);
+  background-color: var(--fieldshield-bg);
+  border: 1px solid var(--fieldshield-border-color);
+  border-radius: var(--fieldshield-border-radius);
+  outline: none;
+  box-sizing: border-box;
+  transition:
+    border-color var(--fieldshield-transition-duration)
+      var(--fieldshield-transition-easing),
+    box-shadow var(--fieldshield-transition-duration)
+      var(--fieldshield-transition-easing);
+}
+
+.fieldshield-a11y-input::placeholder {
+  color: var(--fieldshield-placeholder-color);
+}
+
+/* ─── 6. Findings / Warning Region ─────────────────────────────────────────
+ *
+ * The findings region is a `role="status"` aria-live region. It is always
+ * present in the DOM — screen readers track live regions from initial render.
+ * An element that appears later may not be announced reliably in all browsers.
+ *
+ * When empty (no sensitive patterns detected) the region takes up no visual
+ * space via `min-height: 0`. When populated it expands naturally.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.fieldshield-findings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fieldshield-findings-gap);
+  min-height: 0;
+  font-size: 0.8125rem; /* 13px — slightly smaller than field text */
+  line-height: 1.4;
+}
+
+/** Warning icon (⚠) — decorative, aria-hidden in the component. */
+.fieldshield-warning-icon {
+  color: var(--fieldshield-warning-color);
+  flex-shrink: 0;
+}
+
+/** Inline warning prefix text ("Sensitive data detected. Copy blocked for:") */
+.fieldshield-warning-text {
+  color: var(--fieldshield-warning-color);
+  font-weight: 500;
+}
+
+/**
+ * Pattern name badges (e.g. "SSN", "EMAIL").
+ * Inline-flex so they wrap naturally with the warning text.
+ */
+.fieldshield-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.4375rem; /* 2px 7px */
+  background-color: var(--fieldshield-tag-bg);
+  color: var(--fieldshield-tag-color);
+  border-radius: var(--fieldshield-tag-border-radius);
+  font-size: 0.75rem; /* 12px */
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ─── 7. Screen-reader Utility ──────────────────────────────────────────────
+ *
+ * Canonical visually-hidden pattern.
+ * Hides content from sighted users while keeping it accessible to screen
+ * readers. `clip-path: inset(50%)` is the modern replacement for the legacy
+ * `clip: rect(0 0 0 0)` approach.
+ *
+ * The `:not(:focus):not(:active)` guard ensures that if this class is ever
+ * applied to a focusable element, it becomes visible on focus — preventing
+ * keyboard users from losing their place.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.fieldshield-sr-only:not(:focus):not(:active) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0); /* Legacy — IE 11 */
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ─── 8. Unsafe State ───────────────────────────────────────────────────────
+ *
+ * Applied to the field wrapper when `aria-invalid="true"` is set on the
+ * underlying input. Using the attribute selector rather than a class keeps
+ * the visual state in sync with the semantic state automatically.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** Wrapper unsafe state — triggered by aria-invalid on either child input. */
+.fieldshield-field-wrapper:has(input[aria-invalid="true"]),
+.fieldshield-a11y-input[aria-invalid="true"] {
+  border-color: var(--fieldshield-unsafe-border-color);
+  background-color: var(--fieldshield-unsafe-bg);
+}
+
+/* ─── 9. Focus Management ───────────────────────────────────────────────────
+ *
+ * Focus rings are applied to the wrapper element via `:focus-within` so the
+ * ring appears around the visible border, not around the transparent input.
+ *
+ * `outline: none` is set on the real input itself (section 4) because the
+ * ring is managed here. This is intentional — removing outline without
+ * providing an equivalent visible indicator would fail WCAG 2.1 SC 2.4.7.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** Standard mode — focus ring on the wrapper */
+.fieldshield-field-wrapper:focus-within {
+  border-color: var(--fieldshield-border-color-focus);
+  box-shadow: 0 0 0 var(--fieldshield-focus-ring-width)
+    color-mix(in srgb, var(--fieldshield-border-color-focus) 25%, transparent);
+  outline: none;
+}
+
+/** Unsafe + focused — ring uses the warning accent color */
+.fieldshield-field-wrapper:has(input[aria-invalid="true"]):focus-within {
+  border-color: var(--fieldshield-unsafe-focus-ring);
+  box-shadow: 0 0 0 var(--fieldshield-focus-ring-width)
+    color-mix(in srgb, var(--fieldshield-unsafe-focus-ring) 25%, transparent);
+}
+
+/** A11y mode — focus ring on the input directly */
+.fieldshield-a11y-input:focus {
+  border-color: var(--fieldshield-border-color-focus);
+  box-shadow: 0 0 0 var(--fieldshield-focus-ring-width)
+    color-mix(in srgb, var(--fieldshield-border-color-focus) 25%, transparent);
+  outline: none;
+}
+
+/** A11y mode — unsafe + focused */
+.fieldshield-a11y-input[aria-invalid="true"]:focus {
+  border-color: var(--fieldshield-unsafe-focus-ring);
+  box-shadow: 0 0 0 var(--fieldshield-focus-ring-width)
+    color-mix(in srgb, var(--fieldshield-unsafe-focus-ring) 25%, transparent);
+}
+
+/* ─── 10. Dark Mode ─────────────────────────────────────────────────────────
+ *
+ * Overrides the light-mode tokens when the user's OS preference is dark.
+ * All overrides are scoped to :root so they cascade naturally to every
+ * FieldShieldInput on the page.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fieldshield-bg: #1f2937; /* Tailwind gray-800 */
+    --fieldshield-border-color: #4b5563; /* Tailwind gray-600 */
+    --fieldshield-border-color-focus: #60a5fa; /* Tailwind blue-400 */
+    --fieldshield-text-color: #f9fafb; /* Tailwind gray-50 */
+    --fieldshield-placeholder-color: #6b7280; /* Tailwind gray-500 */
+    --fieldshield-label-color: #d1d5db; /* Tailwind gray-300 */
+    --fieldshield-caret-color: #f9fafb;
+    --fieldshield-mask-color: #f9fafb;
+
+    /* Unsafe state — dark */
+    --fieldshield-unsafe-border-color: #d97706; /* Tailwind amber-600 */
+    --fieldshield-unsafe-bg: #1c1508;
+    --fieldshield-unsafe-focus-ring: #d97706;
+    --fieldshield-warning-color: #fbbf24; /* Tailwind amber-400 */
+    --fieldshield-tag-bg: #451a03; /* Tailwind amber-950 */
+    --fieldshield-tag-color: #fde68a; /* Tailwind amber-200 */
+    --fieldshield-mask-blocked-color: #d97706;
+  }
+}
+
+/* ─── 11. High-contrast Mode ────────────────────────────────────────────────
+ *
+ * In Windows High Contrast / Contrast Themes, `color-mix()` shadows and
+ * custom color tokens are ignored. This block restores visible borders and
+ * focus indicators using the system's forced-color keywords so the component
+ * remains operable for users who rely on high-contrast mode.
+ *
+ * `ButtonText` and `Highlight` are CSS system color keywords guaranteed to
+ * have sufficient contrast in any active contrast theme.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+@media (forced-colors: active) {
+  .fieldshield-field-wrapper,
+  .fieldshield-a11y-input {
+    border: 2px solid ButtonText;
+    forced-color-adjust: auto;
+  }
+
+  .fieldshield-field-wrapper:focus-within,
+  .fieldshield-a11y-input:focus {
+    outline: 3px solid Highlight;
+    outline-offset: var(--fieldshield-focus-ring-offset);
+    box-shadow: none;
+  }
+
+  .fieldshield-real-input {
+    caret-color: ButtonText;
+  }
+
+  .fieldshield-tag {
+    border: 1px solid ButtonText;
+    background-color: Canvas;
+    color: ButtonText;
+  }
+
+  .fieldshield-warning-icon,
+  .fieldshield-warning-text {
+    color: ButtonText;
+  }
+}
+
+/* ─── 12. Reduced Motion ────────────────────────────────────────────────────
+ *
+ * Removes CSS transitions for users who have enabled "Reduce motion" at the
+ * OS level. Transitions are purely cosmetic here — removing them does not
+ * affect functionality.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .fieldshield-field-wrapper,
+  .fieldshield-a11y-input {
+    transition: none;
+  }
+}
+
+/* ── Disabled state ─────────────────────────────────────────────────────────
+ * Triggered via [data-disabled] on the container rather than the native
+ * :disabled pseudo-class. The real input IS disabled natively, but since
+ * it is transparent and overlaid, we style the visible wrapper instead.
+ * ─────────────────────────────────────────────────────────────────────────── */
+[data-disabled] .fieldshield-field-wrapper,
+[data-disabled] .fieldshield-a11y-input {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+[data-disabled] .fieldshield-label {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+[data-disabled] .fieldshield-mask-layer {
+  cursor: not-allowed;
+}

@@ -1,0 +1,731 @@
+/**
+ * @file App.css
+ * @description Styles for the FieldShield demo application.
+ *
+ * Aesthetic: Dark security terminal — deep navy backgrounds, amber accents,
+ * IBM Plex Mono for data/code, Syne for display headings.
+ * Designed to complement the fieldshield.css component styles.
+ *
+ * @structure
+ *   1. Fonts & reset
+ *   2. App tokens
+ *   3. Layout (app shell, header, main, footer)
+ *   4. Demo panel (form)
+ *   5. Field groups & mode badges
+ *   6. Submit button
+ *   7. Security event log
+ *   8. Threat model cards
+ *   9. Utilities
+ *  10. Animations
+ *  11. Responsive
+ */
+
+/* ─── 1. Fonts & Reset ──────────────────────────────────────────────────────*/
+
+@import url("https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:ital,wght@0,400;0,500;1,400&display=swap");
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ─── 2. App Tokens ─────────────────────────────────────────────────────────*/
+
+:root {
+  /* Palette */
+  --app-bg: #080d14;
+  --app-surface: #0d1520;
+  --app-surface-2: #111d2e;
+  --app-border: #1a2d45;
+  --app-border-hover: #1f3a5c;
+
+  --app-amber: #f59e0b;
+  --app-amber-dim: #b45309;
+  --app-amber-glow: rgba(245, 158, 11, 0.12);
+  --app-blue: #38bdf8;
+  --app-blue-dim: #0ea5e9;
+  --app-green: #34d399;
+  --app-red: #f87171;
+
+  --app-text-primary: #e2eaf4;
+  --app-text-secondary: #6b8aad;
+  --app-text-dim: #3d5a7a;
+
+  /* Typography */
+  --font-display: "Syne", sans-serif;
+  --font-body: "DM Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Radii */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Shadows */
+  --shadow-panel: 0 0 0 1px var(--app-border), 0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-glow-amber: 0 0 20px rgba(245, 158, 11, 0.15);
+
+  /* FieldShield overrides — wire app palette into component tokens */
+  --fieldshield-bg: var(--app-surface-2);
+  --fieldshield-border-color: var(--app-border);
+  --fieldshield-border-color-focus: var(--app-blue);
+  --fieldshield-text-color: var(--app-text-primary);
+  --fieldshield-placeholder-color: var(--app-text-dim);
+  --fieldshield-label-color: var(--app-text-secondary);
+  --fieldshield-caret-color: var(--app-text-primary);
+  --fieldshield-mask-color: var(--app-text-primary);
+  --fieldshield-font-family: var(--font-mono);
+  --fieldshield-font-size: 0.875rem;
+
+  --fieldshield-unsafe-border-color: var(--app-amber);
+  --fieldshield-unsafe-bg: rgba(245, 158, 11, 0.06);
+  --fieldshield-unsafe-focus-ring: var(--app-amber);
+  --fieldshield-warning-color: var(--app-amber);
+  --fieldshield-tag-bg: rgba(245, 158, 11, 0.15);
+  --fieldshield-tag-color: var(--app-amber);
+  --fieldshield-mask-blocked-color: var(--app-amber-dim);
+}
+
+/* ─── 3. Layout ──────────────────────────────────────────────────────────── */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  background-color: var(--app-bg);
+  color: var(--app-text-primary);
+  -webkit-font-smoothing: antialiased;
+  /* subtle grid texture */
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.015) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--space-6);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.app-header {
+  padding: var(--space-10) 0 var(--space-8);
+  border-bottom: 1px solid var(--app-border);
+  animation: fade-up 0.5s ease both;
+}
+
+.header-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.logo-icon {
+  font-size: 1.5rem;
+  color: var(--app-amber);
+  filter: drop-shadow(0 0 8px var(--app-amber));
+  line-height: 1;
+}
+
+.logo-name {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--app-text-primary);
+}
+
+.logo-badge {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--app-amber);
+  background: var(--app-amber-glow);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 0.125rem 0.4rem;
+  letter-spacing: 0.04em;
+  align-self: flex-end;
+  margin-bottom: 0.2rem;
+}
+
+.header-tagline {
+  font-size: 0.9375rem;
+  color: var(--app-text-secondary);
+  max-width: 56ch;
+}
+
+/* ── Main ────────────────────────────────────────────────────────────────── */
+
+.app-main {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: var(--space-8);
+  flex: 1;
+  padding: var(--space-8) 0;
+  align-items: start;
+}
+
+/* ─── 4. Demo Panel ──────────────────────────────────────────────────────── */
+
+.demo-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-panel);
+  animation: fade-up 0.5s 0.1s ease both;
+}
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--app-text-primary);
+}
+
+.panel-subtitle {
+  font-size: 0.8125rem;
+  color: var(--app-text-dim);
+}
+
+.form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ─── 5. Field Groups & Mode Badges ─────────────────────────────────────── */
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.field-mode-badge {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--app-blue);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  flex-shrink: 0;
+}
+
+.field-mode-badge--custom {
+  background: rgba(167, 139, 250, 0.1);
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.2);
+}
+
+.field-mode-badge--a11y {
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--app-green);
+  border-color: rgba(52, 211, 153, 0.2);
+}
+
+.field-hint {
+  font-size: 0.8125rem;
+  color: var(--app-text-dim);
+}
+
+.inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-sm);
+  padding: 0.05rem 0.35rem;
+  color: var(--app-text-secondary);
+}
+
+/* ─── 6. Submit Button ───────────────────────────────────────────────────── */
+
+.form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--app-border);
+}
+
+.submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0.6875rem var(--space-6);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #000;
+  background: var(--app-amber);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    transform 100ms ease,
+    box-shadow 150ms ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  align-self: flex-start;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #fbbf24;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.4);
+  transform: translateY(-1px);
+}
+
+.submit-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submit-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.submit-btn--loading {
+  background: var(--app-amber-dim);
+}
+
+.submit-btn--success {
+  background: var(--app-green);
+  color: #000;
+}
+
+/* Loading spinner inside the button */
+.btn-spinner {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.submit-hint {
+  font-size: 0.8125rem;
+  color: var(--app-text-dim);
+}
+
+/* ─── 7. Security Event Log ──────────────────────────────────────────────── */
+
+.log-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+  position: sticky;
+  top: var(--space-6);
+  animation: fade-up 0.5s 0.2s ease both;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface-2);
+}
+
+.log-title {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-text-secondary);
+}
+
+.log-count {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--app-blue);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.log-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+  color: var(--app-text-dim);
+  font-size: 0.8125rem;
+}
+
+.log-empty-icon {
+  font-size: 1.5rem;
+  opacity: 0.4;
+}
+
+.log-list {
+  list-style: none;
+  max-height: 520px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-border) transparent;
+}
+
+.log-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.log-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-list::-webkit-scrollbar-thumb {
+  background: var(--app-border);
+  border-radius: 2px;
+}
+
+.log-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--app-border);
+  animation: slide-in 0.2s ease both;
+}
+
+.log-item:last-child {
+  border-bottom: none;
+}
+
+.log-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* Event type badges */
+.log-type-badge {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+}
+
+.log-type-badge--copy-blocked,
+.log-type-badge--cut-blocked {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--app-red);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+.log-type-badge--paste-detected {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--app-amber);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.log-type-badge--submitted {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--app-green);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+
+.log-type-badge--memory-purged {
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--app-blue);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.log-time {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--app-text-dim);
+  flex-shrink: 0;
+}
+
+.log-field {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--app-text-primary);
+}
+
+.log-findings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.log-finding-tag {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--app-amber);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.log-detail {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--app-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── 8. Threat Model Cards ──────────────────────────────────────────────── */
+
+.app-footer {
+  padding: var(--space-8) 0 var(--space-12);
+  border-top: 1px solid var(--app-border);
+  animation: fade-up 0.5s 0.3s ease both;
+}
+
+.threat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.threat-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.threat-card:hover {
+  border-color: var(--app-border-hover);
+  background: var(--app-surface-2);
+}
+
+.threat-card--blocked {
+  border-color: rgba(52, 211, 153, 0.15);
+}
+
+.threat-card--blocked:hover {
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.threat-card--out-of-scope {
+  border-color: rgba(248, 113, 113, 0.12);
+  opacity: 0.7;
+}
+
+.threat-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.threat-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.threat-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--app-text-primary);
+  flex-wrap: wrap;
+}
+
+.threat-status {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+}
+
+.threat-status--blocked {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--app-green);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+
+.threat-status--out-of-scope {
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--app-red);
+  border: 1px solid rgba(248, 113, 113, 0.15);
+}
+
+.threat-detail {
+  font-size: 0.8125rem;
+  color: var(--app-text-secondary);
+  line-height: 1.45;
+}
+
+/* ─── 9. Utilities ───────────────────────────────────────────────────────── */
+
+/* FieldShield label tweak — slightly smaller in this dark context */
+.fieldshield-label {
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+}
+
+/* ─── 10. Animations ─────────────────────────────────────────────────────── */
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── 11. Responsive ─────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .app-main {
+    grid-template-columns: 1fr;
+  }
+
+  .log-panel {
+    position: static;
+  }
+
+  .threat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .app {
+    padding: 0 var(--space-4);
+  }
+
+  .demo-panel {
+    padding: var(--space-5);
+  }
+
+  .threat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .logo-name {
+    font-size: 1.375rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-header,
+  .demo-panel,
+  .log-panel,
+  .app-footer,
+  .log-item {
+    animation: none;
+  }
+
+  .submit-btn,
+  .threat-card {
+    transition: none;
+  }
+
+  .btn-spinner {
+    animation: none;
+    opacity: 0.5;
+  }
+}
