@@ -299,6 +299,7 @@ describe("FieldShieldInput — onFocus / onBlur", () => {
 
 describe("FieldShieldInput — onChange", () => {
   it("calls onChange when user types", async () => {
+    // onChange signature is (masked: string, findings: string[]) — not a React event
     const onChange = vi.fn() as (masked: string, findings: string[]) => void;
     render(<FieldShieldInput label="Test" onChange={onChange} />);
     await userEvent.type(screen.getByRole("textbox"), "a");
@@ -345,7 +346,8 @@ describe("FieldShieldInput — purge ref method", () => {
     const ref = createRef<FieldShieldHandle>();
     render(<FieldShieldInput label="Test" ref={ref} />);
     const spy = vi.spyOn(getLatestWorker(), "postMessage");
-    ref.current!.purge();
+    act(() => ref.current!.purge());
+    await waitForWorkerUpdate();
     expect(
       spy.mock.calls.some(
         ([msg]) => (msg as { type: string }).type === "PURGE",
@@ -357,9 +359,23 @@ describe("FieldShieldInput — purge ref method", () => {
     const ref = createRef<FieldShieldHandle>();
     render(<FieldShieldInput label="Test" ref={ref} />);
     await userEvent.type(screen.getByRole("textbox"), "sensitive data");
-    ref.current!.purge();
+    act(() => ref.current!.purge());
     await waitForWorkerUpdate();
     expect(await ref.current!.getSecureValue()).toBe("");
+  });
+
+  it("purge clears DOM so typing after purge starts from empty", async () => {
+    const ref = createRef<FieldShieldHandle>();
+    render(<FieldShieldInput label="Test" ref={ref} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.type(input, "hello");
+    act(() => ref.current!.purge());
+    await waitForWorkerUpdate();
+    // DOM must be empty — subsequent delta calculation starts from length 0
+    expect(input.value).toBe("");
+    // Typing after purge must produce the correct real value
+    await userEvent.type(input, "new");
+    expect(await ref.current!.getSecureValue()).toBe("new");
   });
 });
 
@@ -467,6 +483,32 @@ describe("FieldShieldInput — cut behavior", () => {
     await userEvent.type(input, "a");
     expect(input.value).toHaveLength(1);
   });
+
+  it("DOM value is correct length synchronously after partial cut (no rAF dependency)", async () => {
+    render(<FieldShieldInput label="Test" />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.type(input, "abcde"); // real = "abcde", DOM = "xxxxx"
+    input.setSelectionRange(2, 5); // select "cde"
+    fireClipboardEvent(input, "cut");
+    // DOM must reflect cut length immediately — no await needed.
+    // This would fail if input.value update were still deferred in rAF.
+    expect(input.value).toHaveLength(2);
+  });
+
+  it("typing immediately after partial cut produces the correct real value", async () => {
+    const ref = createRef<FieldShieldHandle>();
+    render(<FieldShieldInput label="Test" ref={ref} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.type(input, "hello"); // real = "hello"
+    input.setSelectionRange(2, 5); // select "llo"
+    fireClipboardEvent(input, "cut"); // real = "he"
+    // Type immediately — no await between cut and type simulates the
+    // fast-typist race condition the rAF removal fixes.
+    await userEvent.type(input, "y"); // real should = "hey"
+    const value = await ref.current!.getSecureValue();
+    expect(value).toBe("hey");
+    expect(input.value).toHaveLength(3);
+  });
 });
 
 // ─── Paste behavior ───────────────────────────────────────────────────────────
@@ -503,6 +545,142 @@ describe("FieldShieldInput — paste behavior", () => {
     await userEvent.click(input);
     fireClipboardEvent(input, "paste", "hello world no sensitive data");
     expect(onPaste).not.toHaveBeenCalled();
+  });
+
+  it("allows paste to proceed when onSensitivePaste returns nothing", async () => {
+    const onPaste = vi.fn().mockReturnValue(undefined);
+    render(<FieldShieldInput label="SSN" onSensitivePaste={onPaste} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+    fireClipboardEvent(input, "paste", "123-45-6789");
+    await waitFor(() => expect(onPaste).toHaveBeenCalled());
+    // Paste proceeded — field has characters
+    expect(input.value.length).toBeGreaterThan(0);
+  });
+
+  it("blocks paste when onSensitivePaste returns false", async () => {
+    const onPaste = vi.fn().mockReturnValue(false);
+    render(<FieldShieldInput label="SSN" onSensitivePaste={onPaste} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+    fireClipboardEvent(input, "paste", "123-45-6789");
+    await waitFor(() => expect(onPaste).toHaveBeenCalled());
+    // Paste was blocked — field is empty
+    expect(input.value).toHaveLength(0);
+  });
+
+  it("allows paste when onSensitivePaste returns true", async () => {
+    const onPaste = vi.fn().mockReturnValue(true);
+    render(<FieldShieldInput label="SSN" onSensitivePaste={onPaste} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+    fireClipboardEvent(input, "paste", "123-45-6789");
+    await waitFor(() => expect(onPaste).toHaveBeenCalled());
+    expect(input.value.length).toBeGreaterThan(0);
+  });
+
+  it("does not block paste of non-sensitive content even with onSensitivePaste returning false", async () => {
+    // onSensitivePaste only fires for sensitive content —
+    // clean paste is never affected by the return value
+    const onPaste = vi.fn().mockReturnValue(false);
+    render(<FieldShieldInput label="Notes" onSensitivePaste={onPaste} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+    fireClipboardEvent(input, "paste", "hello world");
+    // onSensitivePaste was never called — paste proceeds normally
+    expect(onPaste).not.toHaveBeenCalled();
+    expect(input.value.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── maxProcessLength — paste blocking ───────────────────────────────────────
+
+describe("FieldShieldInput — maxProcessLength paste blocking", () => {
+  it("blocks paste that would push field over the limit", async () => {
+    render(<FieldShieldInput label="Test" maxProcessLength={10} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+
+    // Paste 11 characters — one over the limit
+    fireClipboardEvent(input, "paste", "a".repeat(11));
+
+    // DOM should be unchanged — paste was blocked
+    expect(input.value).toHaveLength(0);
+  });
+
+  it("allows paste that fits within the limit", async () => {
+    render(<FieldShieldInput label="Test" maxProcessLength={20} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+
+    fireClipboardEvent(input, "paste", "hello");
+
+    // Paste was accepted — DOM shows scrambled characters
+    expect(input.value).toHaveLength(5);
+    expect(input.value).toMatch(/^x+$/);
+  });
+
+  it("fires onMaxLengthExceeded when paste is blocked", async () => {
+    const onExceeded = vi.fn();
+    render(
+      <FieldShieldInput
+        label="Test"
+        maxProcessLength={10}
+        onMaxLengthExceeded={onExceeded}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+    fireClipboardEvent(input, "paste", "a".repeat(15));
+
+    expect(onExceeded).toHaveBeenCalledOnce();
+    expect(onExceeded).toHaveBeenCalledWith(15, 10);
+  });
+
+  it("does not fire onSensitivePaste when paste is blocked by length", async () => {
+    const onPaste = vi.fn();
+    const onExceeded = vi.fn();
+    render(
+      <FieldShieldInput
+        label="SSN"
+        maxProcessLength={5}
+        onSensitivePaste={onPaste}
+        onMaxLengthExceeded={onExceeded}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    await userEvent.click(input);
+
+    // Paste sensitive data that exceeds limit
+    fireClipboardEvent(input, "paste", "123-45-6789");
+
+    // Paste was blocked — onSensitivePaste must NOT fire for a reverted paste
+    expect(onPaste).not.toHaveBeenCalled();
+    expect(onExceeded).toHaveBeenCalledOnce();
+  });
+
+  it("accounts for existing content when checking paste length", async () => {
+    const onExceeded = vi.fn();
+    render(
+      <FieldShieldInput
+        label="Test"
+        maxProcessLength={10}
+        onMaxLengthExceeded={onExceeded}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+
+    // Type 8 characters first
+    await userEvent.type(input, "12345678");
+    expect(input.value).toHaveLength(8);
+
+    // Paste 3 more — 8 + 3 = 11, over the limit of 10
+    await userEvent.click(input);
+    fireClipboardEvent(input, "paste", "abc");
+
+    expect(onExceeded).toHaveBeenCalledOnce();
+    // Field still has the original 8 characters
+    expect(input.value).toHaveLength(8);
   });
 });
 

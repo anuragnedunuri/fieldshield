@@ -233,6 +233,21 @@ describe("Worker GET_TRUTH message", () => {
 
     expect(value).toBe("");
   });
+
+  it("does not crash when GET_TRUTH is received with no port", () => {
+    const w = createWorker();
+    expect(() => w.postMessage({ type: "GET_TRUTH" })).not.toThrow();
+  });
+
+  it("logs console.warn when GET_TRUTH is received with no port", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const w = createWorker();
+    w.postMessage({ type: "GET_TRUTH" }); // no transfer array
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("GET_TRUTH"),
+    );
+    warn.mockRestore();
+  });
 });
 
 // ─── PURGE ────────────────────────────────────────────────────────────────────
@@ -284,6 +299,27 @@ describe("Worker onerror handler", () => {
     w.simulateError("test error");
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0][0]).toBeInstanceOf(ErrorEvent);
+  });
+});
+
+// ─── Unknown message type ─────────────────────────────────────────────────────
+
+describe("Worker — unknown message type", () => {
+  it("does not throw for an unrecognized message type", () => {
+    const w = createWorker();
+    expect(() =>
+      w.postMessage({ type: "UNKNOWN_TYPE_XYZ" } as never),
+    ).not.toThrow();
+  });
+
+  it("logs a console.warn for an unrecognized message type", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const w = createWorker();
+    w.postMessage({ type: "UNKNOWN_TYPE_XYZ" } as never);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("unknown message type"),
+    );
+    warn.mockRestore();
   });
 });
 

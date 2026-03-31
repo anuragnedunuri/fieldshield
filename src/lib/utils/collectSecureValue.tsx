@@ -52,7 +52,7 @@ export type SecureValues<T extends FieldShieldRefMap> = Record<keyof T, string>;
 
 /**
  * Retrieves real values from multiple FieldShieldInput fields in parallel
- * via `Promise.all`. Each value is fetched from the field's isolated Web
+ * via `Promise.allSettled`. Each value is fetched from the field's isolated Web
  * Worker memory — no plaintext ever exists on the main thread until this
  * call resolves.
  *

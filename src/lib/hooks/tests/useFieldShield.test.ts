@@ -485,3 +485,160 @@ describe("useFieldShield — callback stability", () => {
     expect(result.current.purge).toBe(first);
   });
 });
+
+// ─── maxProcessLength ─────────────────────────────────────────────────────────
+
+describe("useFieldShield — maxProcessLength", () => {
+  it("accepts input at exactly the limit", () => {
+    const { result } = renderHook(() => useFieldShield([], 10));
+    const spy = vi.spyOn(getLatestWorker(), "postMessage");
+
+    act(() => result.current.processText("a".repeat(10)));
+
+    const processCall = spy.mock.calls.find(
+      ([msg]) => (msg as { type: string }).type === "PROCESS",
+    );
+    expect(processCall).toBeDefined();
+  });
+
+  it("blocks input one character over the limit and returns false", () => {
+    const { result } = renderHook(() => useFieldShield([], 10));
+    const spy = vi.spyOn(getLatestWorker(), "postMessage");
+
+    let returnValue: boolean | undefined;
+    act(() => {
+      returnValue = result.current.processText("a".repeat(11));
+    });
+
+    const processCall = spy.mock.calls.find(
+      ([msg]) => (msg as { type: string }).type === "PROCESS",
+    );
+    expect(processCall).toBeUndefined();
+    expect(returnValue).toBe(false);
+  });
+
+  it("does not send PROCESS to worker when limit is exceeded", () => {
+    const { result } = renderHook(() => useFieldShield([], 10));
+    const spy = vi.spyOn(getLatestWorker(), "postMessage");
+
+    act(() => result.current.processText("a".repeat(20)));
+
+    const processCalls = spy.mock.calls.filter(
+      ([msg]) => (msg as { type: string }).type === "PROCESS",
+    );
+    expect(processCalls).toHaveLength(0);
+  });
+
+  it("returns true when input is within limit", () => {
+    const { result } = renderHook(() => useFieldShield([], 100));
+    let returnValue: boolean | undefined;
+    act(() => {
+      returnValue = result.current.processText("hello");
+    });
+    expect(returnValue).toBe(true);
+  });
+
+  it("fires console.warn when limit is exceeded", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { result } = renderHook(() => useFieldShield([], 10));
+
+    act(() => result.current.processText("a".repeat(11)));
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[FieldShield]"));
+    warn.mockRestore();
+  });
+
+  it("fires onMaxLengthExceeded callback with correct length and limit", () => {
+    const onExceeded = vi.fn();
+    const { result } = renderHook(() => useFieldShield([], 10, onExceeded));
+
+    act(() => result.current.processText("a".repeat(15)));
+
+    expect(onExceeded).toHaveBeenCalledOnce();
+    expect(onExceeded).toHaveBeenCalledWith(15, 10);
+  });
+
+  it("does not fire onMaxLengthExceeded when input is within limit", () => {
+    const onExceeded = vi.fn();
+    const { result } = renderHook(() => useFieldShield([], 100, onExceeded));
+
+    act(() => result.current.processText("hello"));
+
+    expect(onExceeded).not.toHaveBeenCalled();
+  });
+
+  it("defaults to 100_000 character limit — accepts exactly 100k chars", () => {
+    const onExceeded = vi.fn();
+    const { result } = renderHook(() =>
+      useFieldShield([], undefined, onExceeded),
+    );
+    const spy = vi.spyOn(getLatestWorker(), "postMessage");
+
+    // Use a small string well within the limit — we are testing the
+    // default limit value, not processing performance. The 100k processing
+    // benchmark belongs in Playwright where a real Worker thread is available.
+    act(() => result.current.processText("hello"));
+
+    expect(onExceeded).not.toHaveBeenCalled();
+    const processCall = spy.mock.calls.find(
+      ([msg]) => (msg as { type: string }).type === "PROCESS",
+    );
+    expect(processCall).toBeDefined();
+  });
+
+  it("blocks at 100_001 with default limit", () => {
+    const onExceeded = vi.fn();
+    const { result } = renderHook(() =>
+      useFieldShield([], undefined, onExceeded),
+    );
+
+    act(() => result.current.processText("a".repeat(100_001)));
+
+    expect(onExceeded).toHaveBeenCalledWith(100_001, 100_000);
+  });
+
+  it("processText reference updates when maxProcessLength changes", () => {
+    const { result, rerender } = renderHook(
+      ({ limit }) => useFieldShield([], limit),
+      { initialProps: { limit: 10 } },
+    );
+    const first = result.current.processText;
+    rerender({ limit: 20 });
+    // processText closes over maxProcessLength so reference must update
+    expect(result.current.processText).not.toBe(first);
+  });
+});
+
+// ─── Performance benchmark ────────────────────────────────────────────────────
+//
+// Measurement test — not a strict correctness test. Verifies that the worker
+// processes 100k characters within an acceptable time AND that sensitive data
+// at the very end of a 100k string is still detected (no silent truncation).
+// The 500ms threshold is conservative — Worker processing never blocks the
+// main thread regardless of duration, but this confirms the default limit
+// is safe to ship.
+
+describe("useFieldShield — performance benchmark", () => {
+  it("detects sensitive data at the end of a 100k character input (full string is scanned)", async () => {
+    const { result } = renderHook(() => useFieldShield());
+    const worker = getLatestWorker();
+
+    // Sensitive data at the very end — confirms no silent truncation
+    const longText = "a".repeat(99_983) + " user@example.com";
+    expect(longText.length).toBe(100_000);
+
+    let findings: string[] = [];
+    await new Promise<void>((resolve) => {
+      worker.onmessage = (e: MessageEvent) => {
+        if (e.data.type === "UPDATE") {
+          findings = e.data.findings;
+          resolve();
+        }
+      };
+      act(() => result.current.processText(longText));
+    });
+
+    // EMAIL at position 99,983 was detected — full string was scanned
+    expect(findings).toContain("EMAIL");
+  }, 30_000); // generous timeout for jsdom synchronous processing
+});

@@ -45,7 +45,7 @@
  * Keys are the pattern names surfaced in `findings` arrays and callback
  * payloads (e.g. `"SSN"`, `"EMAIL"`). Values are regex source strings.
  */
-export const FIELDSHIELD_PATTERNS: Record<string, string> = {
+export const FIELDSHIELD_PATTERNS: Readonly<Record<string, string>> = Object.freeze({
   // ── AI / Cloud credentials ────────────────────────────────────────────────
 
   /**
@@ -267,4 +267,4 @@ export const FIELDSHIELD_PATTERNS: Record<string, string> = {
    * which are not sensitive.
    */
   PRIVATE_KEY_BLOCK: "-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
-};
+});

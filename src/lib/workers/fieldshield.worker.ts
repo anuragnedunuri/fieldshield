@@ -288,6 +288,11 @@ self.onmessage = (e: MessageEvent<FieldShieldMessage>): void => {
       const replyPort = e.ports[0];
       if (replyPort) {
         replyPort.postMessage({ text: internalTruth });
+      } else {
+        console.warn(
+          "[FieldShield] GET_TRUTH received with no MessagePort — " +
+            "caller will time out. Pass port2 via the transfer array.",
+        );
       }
       break;
     }
@@ -301,6 +306,13 @@ self.onmessage = (e: MessageEvent<FieldShieldMessage>): void => {
     case "PURGE": {
       internalTruth = "";
       self.postMessage({ type: "PURGED" });
+      break;
+    }
+
+    default: {
+      console.warn(
+        `[FieldShield] Worker received unknown message type: "${(message as { type: string }).type}"`,
+      );
       break;
     }
   }

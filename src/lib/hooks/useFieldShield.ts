@@ -74,9 +74,15 @@ export interface UseFieldShieldReturn {
    * Send the current real value to the worker for pattern analysis.
    * Call this on every input change.
    *
+   * Returns `true` if the input was accepted and sent to the worker,
+   * or `false` if it was blocked because it exceeded `maxProcessLength`.
+   * The caller (e.g. `handleChange` in `FieldShieldInput`) must revert
+   * the DOM to the previous value when `false` is returned.
+   *
    * @param text - The unmasked text to evaluate.
+   * @returns `true` if accepted, `false` if blocked.
    */
-  processText: (text: string) => void;
+  processText: (text: string) => boolean;
 
   /**
    * Retrieve the real, unmasked value from the worker's isolated memory
@@ -112,6 +118,14 @@ export interface UseFieldShieldReturn {
 
 /** Milliseconds to wait for a GET_TRUTH reply before rejecting the promise. */
 const GET_TRUTH_TIMEOUT_MS = 3_000;
+
+/**
+ * Default maximum number of characters sent to the worker for processing.
+ * Large enough for legitimate clinical notes and free-text fields while
+ * protecting against denial-of-service via adversarially crafted input.
+ * Consumers can raise or lower this via the `maxProcessLength` parameter.
+ */
+export const DEFAULT_MAX_PROCESS_LENGTH = 100_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -182,6 +196,8 @@ const toPatternRecord = (patterns: CustomPattern[]): Record<string, string> =>
  */
 export const useFieldShield = (
   customPatterns: CustomPattern[] = [],
+  maxProcessLength: number = DEFAULT_MAX_PROCESS_LENGTH,
+  onMaxLengthExceeded?: (length: number, limit: number) => void,
 ): UseFieldShieldReturn => {
   const [masked, setMasked] = useState("");
   const [findings, setFindings] = useState<string[]>([]);
@@ -225,6 +241,26 @@ export const useFieldShield = (
         setMasked(e.data.masked);
         setFindings(e.data.findings);
       }
+    };
+
+    /**
+     * Log worker runtime errors so failures are not silently swallowed.
+     *
+     * Without this handler, a worker runtime error (e.g., a RegExp engine
+     * crash) is completely invisible — the worker stops responding but
+     * `onmessage` receives no error UPDATE. The field would continue sending
+     * PROCESS messages that never return, leaving `masked` and `findings`
+     * stale while `realValueRef` keeps accumulating real characters with no
+     * masking applied.
+     *
+     * Logging here surfaces the failure in DevTools immediately. The worker
+     * is NOT terminated — a transient error may not affect subsequent
+     * messages, and recreating the worker would lose `internalTruth`.
+     */
+    workerRef.current.onerror = (e: ErrorEvent): void => {
+      console.error(
+        `[FieldShield] Worker runtime error: ${e.message ?? "unknown error"}`,
+      );
     };
 
     /**
@@ -278,9 +314,7 @@ export const useFieldShield = (
       type: "CONFIG",
       payload: {
         defaultPatterns: FIELDSHIELD_PATTERNS,
-        customPatterns: toPatternRecord(
-          JSON.parse(patternsString) as CustomPattern[],
-        ),
+        customPatterns: toPatternRecord(customPatterns),
       },
     });
   }, [patternsString]); // Only reconfigures — never terminates the worker.
@@ -290,16 +324,42 @@ export const useFieldShield = (
   /**
    * Sends `text` to the worker for pattern analysis and storage.
    *
-   * Stable across renders because `useCallback` has empty deps — the function
-   * reads `workerRef.current` at call time rather than closing over a snapshot
-   * of the ref value at definition time.
+   * **maxProcessLength guard** — if the input exceeds `maxProcessLength`,
+   * the keystroke or paste is blocked entirely. The previous value is
+   * preserved in `realValueRef` on the main thread and `internalTruth` in
+   * the worker. A console warning fires so developers see the block in
+   * DevTools, and `onMaxLengthExceeded` fires so the consuming app can
+   * surface a message to the user.
+   *
+   * Blocking rather than truncating is the only safe choice for a security
+   * library — truncation creates a blind spot where sensitive data beyond
+   * the limit is never scanned or protected.
+   *
+   * Stable across renders because `useCallback` deps are `[maxProcessLength,
+   * onMaxLengthExceeded]` — the function always reads the current limit and
+   * callback without recreating the worker.
    */
-  const processText = useCallback((text: string): void => {
-    workerRef.current?.postMessage({
-      type: "PROCESS",
-      payload: { text },
-    });
-  }, []);
+  const processText = useCallback(
+    (text: string): boolean => {
+      if (text.length > maxProcessLength) {
+        console.warn(
+          `[FieldShield] Input length ${text.length} exceeds maxProcessLength ` +
+            `(${maxProcessLength}). Keystroke blocked to prevent unprotected data ` +
+            `beyond the limit. Raise maxProcessLength if this field requires longer input.`,
+        );
+        onMaxLengthExceeded?.(text.length, maxProcessLength);
+        return false; // signal to caller that input was rejected
+      }
+
+      workerRef.current?.postMessage({
+        type: "PROCESS",
+        payload: { text },
+      });
+
+      return true; // signal to caller that input was accepted
+    },
+    [maxProcessLength, onMaxLengthExceeded],
+  );
 
   /**
    * Opens a private `MessageChannel`, transfers `port2` to the worker with

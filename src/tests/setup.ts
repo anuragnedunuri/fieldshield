@@ -93,6 +93,11 @@ export class MockWorker {
         if (transfer && transfer[0]) {
           const port = transfer[0] as MessagePort;
           port.postMessage({ text: this.internalTruth });
+        } else {
+          console.warn(
+            "[FieldShield] GET_TRUTH received with no MessagePort — " +
+              "caller will time out. Pass port2 via the transfer array.",
+          );
         }
         break;
       }
@@ -100,6 +105,13 @@ export class MockWorker {
       case "PURGE": {
         this.internalTruth = "";
         this._emit({ type: "PURGED" });
+        break;
+      }
+
+      default: {
+        console.warn(
+          `[FieldShield] Worker received unknown message type: "${(msg as { type: string }).type}"`,
+        );
         break;
       }
     }
