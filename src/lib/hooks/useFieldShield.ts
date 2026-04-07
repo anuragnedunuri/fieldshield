@@ -238,12 +238,10 @@ export const useFieldShield = (
      */
     let cancelled = false;
 
-    // ── Item 11: Worker initialization fallback ──────────────────────────────
     // Wrap in try/catch — new Worker() can throw in environments with strict
     // CSP (worker-src 'none'), sandboxed iframes, or unsupported contexts.
-    // Without this guard the component throws on mount and renders nothing.
-    // On failure we set workerFailed = true so FieldShieldInput can fall back
-    // to a11yMode, keeping the field usable even without worker isolation.
+    // On failure, workerFailed is set so FieldShieldInput can fall back to
+    // a11yMode, keeping the field usable even without worker isolation.
     try {
       workerRef.current = new Worker(
         new URL("../workers/fieldshield.worker.ts", import.meta.url),
@@ -254,17 +252,15 @@ export const useFieldShield = (
         "[FieldShield] Worker failed to initialize — falling back to a11yMode.",
         err,
       );
-      // queueMicrotask defers the state update out of the effect body,
-      // satisfying the "no setState in effect" rule while still updating
-      // before the first paint so the fallback render path activates.
+      // queueMicrotask defers the state update out of the effect body so the
+      // fallback render path activates before the first paint.
       queueMicrotask(() => setWorkerFailed(true));
       return; // cleanup is a no-op — nothing was created
     }
 
-    // ── Item 20: Worker message payload validation ───────────────────────────
-    // Validate message structure before touching state. An unvalidated UPDATE
-    // could set masked/findings to unexpected types if a malicious or malformed
-    // message is somehow delivered to the worker's port.
+    // Validate message structure before touching state — an unvalidated UPDATE
+    // could set masked/findings to unexpected types if a malformed or unexpected
+    // message is delivered to the worker's port.
     workerRef.current.onmessage = (e: MessageEvent) => {
       if (cancelled) return;
 
@@ -278,13 +274,11 @@ export const useFieldShield = (
       }
     };
 
-    // ── Item 12: onWorkerError callback ──────────────────────────────────────
-    // Surfaces worker runtime errors to the consuming app via callback.
-    // Without this, a dead worker is completely invisible — the field silently
-    // stops scanning while the app believes it is protected.
-    // We reset masked/findings so the field does not freeze showing stale
-    // sensitive-data warnings. Worker is NOT terminated — a transient error
-    // may not affect subsequent messages, and recreation loses internalTruth.
+    // Surface worker runtime errors via callback so a dead worker is not
+    // invisible — without this the field silently stops scanning. Reset
+    // masked/findings so the field does not freeze on stale warnings.
+    // The worker is not terminated: a transient error may not affect
+    // subsequent messages, and recreation would lose internalTruth.
     workerRef.current.onerror = (e: ErrorEvent): void => {
       if (cancelled) return;
       console.error(
@@ -313,8 +307,8 @@ export const useFieldShield = (
     workerRef.current.postMessage({
       type: "CONFIG",
       payload: {
-        defaultPatterns: FIELDSHIELD_PATTERNS, // already a Record — no conversion needed
-        customPatterns: toPatternRecord([]), // empty on mount, Effect 2 delivers these
+        defaultPatterns: FIELDSHIELD_PATTERNS,
+        customPatterns: toPatternRecord([]), // Effect 2 delivers custom patterns after mount
       },
     });
 
@@ -380,7 +374,7 @@ export const useFieldShield = (
             `beyond the limit. Raise maxProcessLength if this field requires longer input.`,
         );
         onMaxLengthExceeded?.(text.length, maxProcessLength);
-        return false; // signal to caller that input was rejected
+        return false;
       }
 
       workerRef.current?.postMessage({
@@ -388,7 +382,7 @@ export const useFieldShield = (
         payload: { text },
       });
 
-      return true; // signal to caller that input was accepted
+      return true;
     },
     [maxProcessLength, onMaxLengthExceeded],
   );

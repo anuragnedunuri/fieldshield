@@ -127,10 +127,9 @@ export interface FieldShieldInputProps {
   placeholder?: string;
 
   /**
-   * Additional sensitive-data patterns to layer on top of the 15 built-in
+   * Additional sensitive-data patterns to layer on top of the built-in
    * defaults. See `FIELDSHIELD_PATTERNS` for the full list. Opt-in patterns
-   * (`SWIFT_BIC`, `NPI_NUMBER`, `PASSPORT_NUMBER`) can be added here from
-   * `OPT_IN_PATTERNS` when the field context warrants them.
+   * from `OPT_IN_PATTERNS` can be added here when the field context warrants them.
    *
    * @example
    * ```tsx
@@ -537,27 +536,6 @@ export const FieldShieldInput = forwardRef<
     // ── Event handlers ──────────────────────────────────────────────────────
 
     /**
-     * Handles input changes in DOM-scrambling mode (standard and textarea).
-     *
-     * **Reconstruction algorithm:**
-     * The DOM contains scrambled `x` characters from the previous keystroke.
-     * We cannot read the real value from it. Instead we derive the new real
-     * value from three knowns:
-     *   1. `realValueRef.current` — the previous real value
-     *   2. `cursorPos`            — cursor position after the edit
-     *   3. `delta`                — character count difference (positive = insert,
-     *                               negative = delete)
-     *
-     * For insertions: the new character(s) live in `domValue` between
-     * `cursorPos - delta` and `cursorPos` — the only non-`x` chars there.
-     * Splice them into the real value at the correct position.
-     *
-     * For deletions: remove `|delta|` characters from the real value at the
-     * cursor position.
-     *
-     * @param e - The React synthetic change event (input or textarea).
-     */
-    /**
      * Commits a new real value to the ref, sends it to the worker for pattern
      * detection, scrambles the DOM, restores the cursor, and updates the
      * auto-grow mirror div.
@@ -793,16 +771,8 @@ export const FieldShieldInput = forwardRef<
         }
 
         const pasteFindings: string[] = [];
-        /**
-         * Build an accurate masked preview of the pasted text by running
-         * each matched pattern's replace over a copy of the pasted string.
-         * This mirrors exactly what the worker will produce — only sensitive
-         * spans are replaced with █, non-sensitive text is left readable.
-         *
-         * Previously this used `pasted.replace(/\S/g, "█")` which masked
-         * every non-whitespace character, making non-sensitive words like
-         * "Patient:" appear blocked in the callback payload.
-         */
+        // Build a masked preview that mirrors the worker's output — only
+        // sensitive spans are replaced with █, non-sensitive text is unchanged.
         let maskedPaste = pasted;
         for (const [name, regex] of compiled) {
           regex.lastIndex = 0; // Reset #1 — before test()
@@ -892,13 +862,10 @@ export const FieldShieldInput = forwardRef<
         // so the real SSN / API key never reaches the clipboard.
         e.clipboardData.setData("text/plain", selectedMasked);
 
-        // Fire optional callback — consuming app can toast, log, or audit.
-        // ?.() — only calls the function if the prop was provided.
         onSensitiveCopyAttempt?.({
           timestamp: new Date().toISOString(),
           fieldLabel: ariaLabel,
-          findings: [...findings], // snapshot — prevents receiver holding
-          // reference to internal state
+          findings: [...findings], // snapshot — receiver must not hold a reference to internal state
           masked: selectedMasked,
           eventType: e.type === "cut" ? "cut" : "copy",
         });
