@@ -74,9 +74,15 @@ export interface UseFieldShieldReturn {
    * Send the current real value to the worker for pattern analysis.
    * Call this on every input change.
    *
+   * Returns `true` if the input was accepted and sent to the worker,
+   * or `false` if it was blocked because it exceeded `maxProcessLength`.
+   * The caller (e.g. `handleChange` in `FieldShieldInput`) must revert
+   * the DOM to the previous value when `false` is returned.
+   *
    * @param text - The unmasked text to evaluate.
+   * @returns `true` if accepted, `false` if blocked.
    */
-  processText: (text: string) => void;
+  processText: (text: string) => boolean;
 
   /**
    * Retrieve the real, unmasked value from the worker's isolated memory
@@ -106,12 +112,30 @@ export interface UseFieldShieldReturn {
    * demonstrable cleanup of sensitive data from application memory.
    */
   purge: () => void;
+
+  /**
+   * `true` if the Web Worker failed to initialize and the hook has fallen
+   * back to no-op mode. The consuming component should switch to `a11yMode`
+   * when this is `true` to ensure the field remains usable.
+   *
+   * Common causes: strict CSP blocking worker initialization, unsupported
+   * browser context (some sandboxed iframes), or browser memory pressure.
+   */
+  workerFailed: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Milliseconds to wait for a GET_TRUTH reply before rejecting the promise. */
 const GET_TRUTH_TIMEOUT_MS = 3_000;
+
+/**
+ * Default maximum number of characters sent to the worker for processing.
+ * Large enough for legitimate clinical notes and free-text fields while
+ * protecting against denial-of-service via adversarially crafted input.
+ * Consumers can raise or lower this via the `maxProcessLength` parameter.
+ */
+export const DEFAULT_MAX_PROCESS_LENGTH = 100_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -182,9 +206,13 @@ const toPatternRecord = (patterns: CustomPattern[]): Record<string, string> =>
  */
 export const useFieldShield = (
   customPatterns: CustomPattern[] = [],
+  maxProcessLength: number = DEFAULT_MAX_PROCESS_LENGTH,
+  onMaxLengthExceeded?: (length: number, limit: number) => void,
+  onWorkerError?: (error: ErrorEvent) => void,
 ): UseFieldShieldReturn => {
   const [masked, setMasked] = useState("");
   const [findings, setFindings] = useState<string[]>([]);
+  const [workerFailed, setWorkerFailed] = useState(false);
   const workerRef = useRef<Worker | null>(null);
 
   /**
@@ -210,21 +238,61 @@ export const useFieldShield = (
      */
     let cancelled = false;
 
-    workerRef.current = new Worker(
-      new URL("../workers/fieldshield.worker.ts", import.meta.url),
-      { type: "module" },
-    );
+    // ── Item 11: Worker initialization fallback ──────────────────────────────
+    // Wrap in try/catch — new Worker() can throw in environments with strict
+    // CSP (worker-src 'none'), sandboxed iframes, or unsupported contexts.
+    // Without this guard the component throws on mount and renders nothing.
+    // On failure we set workerFailed = true so FieldShieldInput can fall back
+    // to a11yMode, keeping the field usable even without worker isolation.
+    try {
+      workerRef.current = new Worker(
+        new URL("../workers/fieldshield.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+    } catch (err) {
+      console.error(
+        "[FieldShield] Worker failed to initialize — falling back to a11yMode.",
+        err,
+      );
+      // queueMicrotask defers the state update out of the effect body,
+      // satisfying the "no setState in effect" rule while still updating
+      // before the first paint so the fallback render path activates.
+      queueMicrotask(() => setWorkerFailed(true));
+      return; // cleanup is a no-op — nothing was created
+    }
 
+    // ── Item 20: Worker message payload validation ───────────────────────────
+    // Validate message structure before touching state. An unvalidated UPDATE
+    // could set masked/findings to unexpected types if a malicious or malformed
+    // message is somehow delivered to the worker's port.
     workerRef.current.onmessage = (e: MessageEvent) => {
-      // Guard — discard any response that arrives after component unmount.
-      // Covers the race where the worker posts an UPDATE in the same tick
-      // that terminate() is called.
       if (cancelled) return;
 
-      if (e.data?.type === "UPDATE") {
+      if (
+        e.data?.type === "UPDATE" &&
+        typeof e.data.masked === "string" &&
+        Array.isArray(e.data.findings)
+      ) {
         setMasked(e.data.masked);
-        setFindings(e.data.findings);
+        setFindings(e.data.findings as string[]);
       }
+    };
+
+    // ── Item 12: onWorkerError callback ──────────────────────────────────────
+    // Surfaces worker runtime errors to the consuming app via callback.
+    // Without this, a dead worker is completely invisible — the field silently
+    // stops scanning while the app believes it is protected.
+    // We reset masked/findings so the field does not freeze showing stale
+    // sensitive-data warnings. Worker is NOT terminated — a transient error
+    // may not affect subsequent messages, and recreation loses internalTruth.
+    workerRef.current.onerror = (e: ErrorEvent): void => {
+      if (cancelled) return;
+      console.error(
+        `[FieldShield] Worker runtime error: ${e.message ?? "unknown error"}`,
+      );
+      setMasked("");
+      setFindings([]);
+      onWorkerError?.(e);
     };
 
     /**
@@ -278,9 +346,7 @@ export const useFieldShield = (
       type: "CONFIG",
       payload: {
         defaultPatterns: FIELDSHIELD_PATTERNS,
-        customPatterns: toPatternRecord(
-          JSON.parse(patternsString) as CustomPattern[],
-        ),
+        customPatterns: toPatternRecord(customPatterns),
       },
     });
   }, [patternsString]); // Only reconfigures — never terminates the worker.
@@ -290,16 +356,42 @@ export const useFieldShield = (
   /**
    * Sends `text` to the worker for pattern analysis and storage.
    *
-   * Stable across renders because `useCallback` has empty deps — the function
-   * reads `workerRef.current` at call time rather than closing over a snapshot
-   * of the ref value at definition time.
+   * **maxProcessLength guard** — if the input exceeds `maxProcessLength`,
+   * the keystroke or paste is blocked entirely. The previous value is
+   * preserved in `realValueRef` on the main thread and `internalTruth` in
+   * the worker. A console warning fires so developers see the block in
+   * DevTools, and `onMaxLengthExceeded` fires so the consuming app can
+   * surface a message to the user.
+   *
+   * Blocking rather than truncating is the only safe choice for a security
+   * library — truncation creates a blind spot where sensitive data beyond
+   * the limit is never scanned or protected.
+   *
+   * Stable across renders because `useCallback` deps are `[maxProcessLength,
+   * onMaxLengthExceeded]` — the function always reads the current limit and
+   * callback without recreating the worker.
    */
-  const processText = useCallback((text: string): void => {
-    workerRef.current?.postMessage({
-      type: "PROCESS",
-      payload: { text },
-    });
-  }, []);
+  const processText = useCallback(
+    (text: string): boolean => {
+      if (text.length > maxProcessLength) {
+        console.warn(
+          `[FieldShield] Input length ${text.length} exceeds maxProcessLength ` +
+            `(${maxProcessLength}). Keystroke blocked to prevent unprotected data ` +
+            `beyond the limit. Raise maxProcessLength if this field requires longer input.`,
+        );
+        onMaxLengthExceeded?.(text.length, maxProcessLength);
+        return false; // signal to caller that input was rejected
+      }
+
+      workerRef.current?.postMessage({
+        type: "PROCESS",
+        payload: { text },
+      });
+
+      return true; // signal to caller that input was accepted
+    },
+    [maxProcessLength, onMaxLengthExceeded],
+  );
 
   /**
    * Opens a private `MessageChannel`, transfers `port2` to the worker with
@@ -333,6 +425,7 @@ export const useFieldShield = (
 
       port1.onmessage = (event: MessageEvent<{ text: string }>) => {
         clearTimeout(timeout);
+        port1.close(); // release the port — no further messages expected
         resolve(event.data.text);
       };
 
@@ -350,5 +443,5 @@ export const useFieldShield = (
     workerRef.current?.postMessage({ type: "PURGE" });
   }, []);
 
-  return { masked, findings, processText, getSecureValue, purge };
+  return { masked, findings, processText, getSecureValue, purge, workerFailed };
 };

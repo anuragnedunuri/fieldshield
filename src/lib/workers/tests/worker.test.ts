@@ -174,8 +174,6 @@ describe("Worker PROCESS message — per-pattern detection", () => {
     ["EMAIL", "user@example.com"],
     ["PHONE", "555-123-4567"],
     ["CREDIT_CARD", "4111111111111111"],
-    ["IBAN", "GB82WEST12345698765432"],
-    ["PASSPORT_NUMBER", "A12345678"],
     ["DATE_OF_BIRTH", "01/15/1990"],
     ["TAX_ID", "12-3456789"],
     ["AI_API_KEY", "sk-abcdefghijklmnopqrstu1234"],
@@ -184,6 +182,7 @@ describe("Worker PROCESS message — per-pattern detection", () => {
     ["STRIPE_KEY", "sk_live_abc123def456ghi789jkl012mno"],
     ["JWT", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.sig"],
     ["PRIVATE_KEY_BLOCK", "-----BEGIN PRIVATE KEY-----"],
+    ["UK_NIN", "AB123456C"],
   ] as [string, string][])("detects %s", async (patternName, input) => {
     const w = createWorker();
     const { findings } = await processAndCapture(w, input);
@@ -232,6 +231,21 @@ describe("Worker GET_TRUTH message", () => {
     });
 
     expect(value).toBe("");
+  });
+
+  it("does not crash when GET_TRUTH is received with no port", () => {
+    const w = createWorker();
+    expect(() => w.postMessage({ type: "GET_TRUTH" })).not.toThrow();
+  });
+
+  it("logs console.warn when GET_TRUTH is received with no port", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const w = createWorker();
+    w.postMessage({ type: "GET_TRUTH" }); // no transfer array
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("GET_TRUTH"),
+    );
+    warn.mockRestore();
   });
 });
 
@@ -284,6 +298,27 @@ describe("Worker onerror handler", () => {
     w.simulateError("test error");
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0][0]).toBeInstanceOf(ErrorEvent);
+  });
+});
+
+// ─── Unknown message type ─────────────────────────────────────────────────────
+
+describe("Worker — unknown message type", () => {
+  it("does not throw for an unrecognized message type", () => {
+    const w = createWorker();
+    expect(() =>
+      w.postMessage({ type: "UNKNOWN_TYPE_XYZ" } as never),
+    ).not.toThrow();
+  });
+
+  it("logs a console.warn for an unrecognized message type", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const w = createWorker();
+    w.postMessage({ type: "UNKNOWN_TYPE_XYZ" } as never);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("unknown message type"),
+    );
+    warn.mockRestore();
   });
 });
 

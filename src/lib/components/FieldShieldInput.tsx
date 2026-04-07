@@ -127,8 +127,10 @@ export interface FieldShieldInputProps {
   placeholder?: string;
 
   /**
-   * Additional sensitive-data patterns to layer on top of the built-in
-   * defaults (SSN, EMAIL, PHONE, CREDIT_CARD, IBAN, AI_API_KEY, AWS_ACCESS_KEY).
+   * Additional sensitive-data patterns to layer on top of the 15 built-in
+   * defaults. See `FIELDSHIELD_PATTERNS` for the full list. Opt-in patterns
+   * (`SWIFT_BIC`, `NPI_NUMBER`, `PASSPORT_NUMBER`) can be added here from
+   * `OPT_IN_PATTERNS` when the field context warrants them.
    *
    * @example
    * ```tsx
@@ -183,13 +185,36 @@ export interface FieldShieldInputProps {
 
   /**
    * Fired when the user pastes content into the field that contains sensitive
-   * patterns. The paste is allowed to proceed — the user may legitimately be
-   * entering their own data — but the event is surfaced for auditing or UX
-   * feedback.
+   * patterns.
+   *
+   * Return `false` to block the paste entirely — the field reverts to its
+   * previous value and the clipboard content is discarded. Return nothing
+   * (or `true`) to allow the paste to proceed.
+   *
+   * Use the block behavior for fields where sensitive data should never be
+   * pasted — for example a "reason for visit" field that should not accept
+   * SSNs. Use the allow behavior (default) for fields where the user is
+   * legitimately entering their own sensitive data.
    *
    * @param event - Details of the detected paste content.
+   * @returns `false` to block the paste, `void` or `true` to allow it.
+   *
+   * @example
+   * ```tsx
+   * // Block sensitive pastes
+   * onSensitivePaste={(e) => {
+   *   logAuditEvent(e);
+   *   return false; // revert the paste
+   * }}
+   *
+   * // Allow sensitive pastes but log them
+   * onSensitivePaste={(e) => {
+   *   logAuditEvent(e);
+   *   // return nothing — paste proceeds
+   * }}
+   * ```
    */
-  onSensitivePaste?: (event: SensitiveClipboardEvent) => void;
+  onSensitivePaste?: (event: SensitiveClipboardEvent) => boolean | void;
 
   /**
    * Fired when the field receives focus. Forwarded directly from the
@@ -230,6 +255,64 @@ export interface FieldShieldInputProps {
    * of text the worker processes on each keystroke.
    */
   maxLength?: number;
+
+  /**
+   * Maximum number of characters sent to the worker for pattern detection.
+   * If the user types or pastes beyond this limit the input is blocked —
+   * the field reverts to its previous value and `onMaxLengthExceeded` fires.
+   *
+   * Blocking rather than truncating is intentional: truncation would create
+   * a blind spot where sensitive data beyond the limit is never scanned.
+   *
+   * This is distinct from `maxLength` which restricts the HTML input at the
+   * browser level. Use `maxLength` for structured fields with known lengths
+   * (SSN, credit card). Use `maxProcessLength` to cap worker processing for
+   * free-text fields where longer input is valid but should be bounded.
+   *
+   * @defaultValue 100000
+   */
+  maxProcessLength?: number;
+
+  /**
+   * Called when input is blocked because it exceeds `maxProcessLength`.
+   * Use this to surface a character count warning or error message to the user.
+   *
+   * @param length - The actual input length that triggered the block.
+   * @param limit  - The `maxProcessLength` limit that was exceeded.
+   *
+   * @example
+   * ```tsx
+   * onMaxLengthExceeded={(length, limit) =>
+   *   setError(`Input too long — maximum ${limit} characters allowed`)
+   * }
+   * ```
+   */
+  onMaxLengthExceeded?: (length: number, limit: number) => void;
+
+  /**
+   * Called when the Web Worker encounters a runtime error.
+   *
+   * When this fires, FieldShieldInput has already reset `masked` and
+   * `findings` to empty so the field does not freeze showing stale warnings.
+   * The worker is NOT terminated — a transient error may not affect subsequent
+   * messages. If the error is persistent, consider displaying a warning and
+   * asking the user to refresh.
+   *
+   * If the worker fails to initialize entirely (e.g. due to a strict CSP),
+   * the component automatically falls back to `a11yMode` — this callback is
+   * NOT called in that case. Listen for the `a11yMode` fallback by providing
+   * `onWorkerError` and checking whether `e.message` contains "initialize".
+   *
+   * @param error - The ErrorEvent from the worker's onerror handler.
+   *
+   * @example
+   * ```tsx
+   * onWorkerError={(e) =>
+   *   console.error("FieldShield worker error:", e.message)
+   * }
+   * ```
+   */
+  onWorkerError?: (error: ErrorEvent) => void;
 
   /**
    * Initial number of visible text rows. Only applies when `type="textarea"`.
@@ -320,11 +403,32 @@ export const FieldShieldInput = forwardRef<
       maxLength,
       rows = 3,
       inputMode = "text",
+      maxProcessLength = 100_000,
+      onMaxLengthExceeded,
+      onWorkerError,
     },
     ref,
   ) => {
-    const { masked, findings, processText, getSecureValue, purge } =
-      useFieldShield(customPatterns);
+    const {
+      masked,
+      findings,
+      processText,
+      getSecureValue,
+      purge,
+      workerFailed,
+    } = useFieldShield(
+      customPatterns,
+      maxProcessLength,
+      onMaxLengthExceeded,
+      onWorkerError,
+    );
+
+    // Auto-activate a11yMode if the worker failed to initialize.
+    // This keeps the field fully usable (native password masking + clipboard
+    // protection) even in environments where Workers are unavailable.
+    // The consumer's explicit a11yMode prop is also respected — either
+    // condition activates the fallback render path.
+    const effectiveA11yMode = a11yMode || workerFailed;
 
     const isUnsafe = findings.length > 0;
 
@@ -381,11 +485,36 @@ export const FieldShieldInput = forwardRef<
      * Exposes `getSecureValue` and `purge` to the parent via the forwarded ref.
      * `processText` is intentionally excluded — the parent should never bypass
      * the event handler flow and trigger worker processing directly.
+     *
+     * `purge` is wrapped here rather than forwarded directly so it can
+     * zero `realValueRef.current` and clear the DOM in addition to zeroing
+     * the worker's `internalTruth`. Without this, the real value would survive
+     * in main-thread JS heap after a purge call — a compliance gap for
+     * HIPAA / PCI-DSS environments that require demonstrable memory cleanup.
+     *
+     * The DOM is also cleared so that a subsequent keystroke after purge
+     * computes the correct delta (0 insertion from an empty base) rather than
+     * treating the stale scrambled `x` characters as pre-existing content.
      */
-    useImperativeHandle(ref, () => ({ getSecureValue, purge }), [
-      getSecureValue,
-      purge,
-    ]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        getSecureValue,
+        purge: () => {
+          purge(); // zero worker's internalTruth + emit PURGED
+          processText(""); // reset worker masked/findings via UPDATE
+          realValueRef.current = ""; // zero main-thread copy
+
+          // Clear DOM so the next delta calculation starts from a clean slate.
+          const el = inputRef.current ?? textareaRef.current;
+          if (el) {
+            el.value = "";
+            if (growRef.current) growRef.current.textContent = "\n";
+          }
+        },
+      }),
+      [getSecureValue, purge, processText],
+    );
 
     // ── onChange effect ─────────────────────────────────────────────────────
 
@@ -447,8 +576,19 @@ export const FieldShieldInput = forwardRef<
       newReal: string,
       cursor: number,
     ): void => {
+      // processText returns false if input exceeds maxProcessLength.
+      // Revert the DOM to the previous scrambled value and restore the
+      // cursor so the field appears unchanged to the user.
+      const accepted = processText(newReal);
+      if (!accepted) {
+        const prevScrambled = realValueRef.current.replace(/[^\n]/g, "x");
+        input.value = prevScrambled;
+        const prevCursor = Math.min(cursor, realValueRef.current.length);
+        input.setSelectionRange(prevCursor, prevCursor);
+        return;
+      }
+
       realValueRef.current = newReal;
-      processText(newReal);
 
       // Scramble DOM — replace every non-newline character with x.
       // Newlines are preserved so the line structure stays intact and
@@ -485,7 +625,10 @@ export const FieldShieldInput = forwardRef<
       if (delta > 0) {
         // Insertion — slice the new real characters from the DOM value
         // (they are the only non-x characters) and splice into real value.
-        const insertPos = cursorPos - delta;
+        // Math.max(0, ...) guards against negative positions that can arise
+        // from certain IME compositions or browser autofill events where the
+        // reported cursor position is less than the number of inserted chars.
+        const insertPos = Math.max(0, cursorPos - delta);
         const inserted = domValue.slice(insertPos, cursorPos);
         newReal =
           prevReal.slice(0, insertPos) + inserted + prevReal.slice(insertPos);
@@ -569,6 +712,17 @@ export const FieldShieldInput = forwardRef<
      * but indirect. `handlePaste` reads the pasted text directly from the
      * `ClipboardEvent`, which is more explicit and reliable for large pastes.
      *
+     * **maxProcessLength guard:**
+     * The resulting length is calculated BEFORE constructing `newReal` to
+     * avoid allocating a potentially huge string just to immediately discard
+     * it. If the paste would push the field over the limit, it is blocked
+     * entirely — the DOM is unchanged (browser default was already prevented),
+     * `console.warn` fires, and `onMaxLengthExceeded` is called.
+     *
+     * Crucially, `onSensitivePaste` only fires AFTER the length check passes.
+     * This prevents a misleading PASTE_DETECTED security event for a paste
+     * that was silently reverted.
+     *
      * **Sensitive paste detection:**
      * Uses `FIELDSHIELD_PATTERNS` from `patterns.ts` directly — the same source
      * the worker receives via CONFIG. This guarantees the paste pre-scan is
@@ -589,6 +743,20 @@ export const FieldShieldInput = forwardRef<
       const end = input.selectionEnd ?? 0;
       const prev = realValueRef.current;
 
+      // Calculate resulting length BEFORE constructing newReal.
+      // prev.length - (end - start) = length after removing selected text.
+      // + pasted.length = length after inserting pasted text.
+      // This avoids allocating a potentially huge string just to discard it.
+      const newLength = prev.length - (end - start) + pasted.length;
+      if (newLength > maxProcessLength) {
+        console.warn(
+          `[FieldShield] Paste blocked — result length ${newLength} would exceed ` +
+            `maxProcessLength (${maxProcessLength}). DOM unchanged.`,
+        );
+        onMaxLengthExceeded?.(newLength, maxProcessLength);
+        return; // DOM is already unchanged — browser default was prevented above
+      }
+
       // Splice pasted text into real value at selection range.
       // If text was selected (start !== end), it is replaced by the paste.
       // If cursor only (start === end), paste is inserted at cursor position.
@@ -600,52 +768,80 @@ export const FieldShieldInput = forwardRef<
       // Pre-screen pasted content for sensitive patterns.
       // Only fires if the consumer provided the callback — skip scanning
       // entirely if the result would go unused.
+      // NOTE: this runs AFTER the length check so onSensitivePaste is never
+      // called for a paste that was blocked — that would be misleading.
       if (onSensitivePaste && pasted) {
         const activePatterns = [
           ...Object.entries(FIELDSHIELD_PATTERNS),
           ...customPatterns.map((p) => [p.name, p.regex] as [string, string]),
         ];
 
-        const pasteFindings = activePatterns
-          .filter(([, source]) => {
-            try {
-              return new RegExp(source, "i").test(pasted);
-            } catch {
-              return false;
-            }
-          })
-          .map(([name]) => name);
+        // Compile each pattern once and reuse for both detection (.test) and
+        // masking (.replace). Two lastIndex resets per pattern are required
+        // because the `gi` flag makes RegExp stateful — .test() advances
+        // lastIndex to the end of the first match, so we must reset before
+        // .replace() to ensure all occurrences are replaced from position 0.
+        // This mirrors the double-reset pattern used in processTextLogic in
+        // the worker.
+        const compiled: Array<[string, RegExp]> = [];
+        for (const [name, source] of activePatterns) {
+          try {
+            compiled.push([name, new RegExp(source, "gi")]);
+          } catch {
+            /* skip invalid patterns */
+          }
+        }
+
+        const pasteFindings: string[] = [];
+        /**
+         * Build an accurate masked preview of the pasted text by running
+         * each matched pattern's replace over a copy of the pasted string.
+         * This mirrors exactly what the worker will produce — only sensitive
+         * spans are replaced with █, non-sensitive text is left readable.
+         *
+         * Previously this used `pasted.replace(/\S/g, "█")` which masked
+         * every non-whitespace character, making non-sensitive words like
+         * "Patient:" appear blocked in the callback payload.
+         */
+        let maskedPaste = pasted;
+        for (const [name, regex] of compiled) {
+          regex.lastIndex = 0; // Reset #1 — before test()
+          if (regex.test(pasted)) {
+            pasteFindings.push(name);
+            regex.lastIndex = 0; // Reset #2 — test() advanced lastIndex
+            maskedPaste = maskedPaste.replace(regex, (match) =>
+              "█".repeat(match.length),
+            );
+          }
+        }
 
         if (pasteFindings.length > 0) {
-          /**
-           * Build an accurate masked preview of the pasted text by running
-           * each matched pattern's replace over a copy of the pasted string.
-           * This mirrors exactly what the worker will produce — only sensitive
-           * spans are replaced with █, non-sensitive text is left readable.
-           *
-           * Previously this used `pasted.replace(/\S/g, "█")` which masked
-           * every non-whitespace character, making non-sensitive words like
-           * "Patient:" appear blocked in the callback payload.
-           */
-          let maskedPaste = pasted;
-          for (const [, source] of activePatterns) {
-            try {
-              maskedPaste = maskedPaste.replace(
-                new RegExp(source, "gi"),
-                (match) => "█".repeat(match.length),
-              );
-            } catch {
-              /* skip invalid patterns */
-            }
-          }
+          const shouldBlock =
+            onSensitivePaste({
+              timestamp: new Date().toISOString(),
+              fieldLabel: ariaLabel,
+              findings: [...new Set(pasteFindings)],
+              masked: maskedPaste,
+              eventType: "paste",
+            }) === false;
 
-          onSensitivePaste({
-            timestamp: new Date().toISOString(),
-            fieldLabel: ariaLabel,
-            findings: [...new Set(pasteFindings)],
-            masked: maskedPaste,
-            eventType: "paste",
-          });
+          /**
+           * Consumer returned `false` — revert the paste.
+           *
+           * `commitRealValue` is called with the previous real value and
+           * the original cursor position. This re-scrambles the DOM to
+           * match `prev`, re-sends to the worker so masked/findings reflect
+           * the reverted state, and restores the cursor to where it was
+           * before the paste attempt.
+           *
+           * This is the correct revert mechanism because `commitRealValue`
+           * is the single source of truth for synchronising realValueRef,
+           * the worker, the DOM, and the grow div — reverting through it
+           * ensures all four stay in sync.
+           */
+          if (shouldBlock) {
+            commitRealValue(input, prev, start);
+          }
         }
       }
     };
@@ -745,10 +941,8 @@ export const FieldShieldInput = forwardRef<
         // Writing a new x-string of the correct length here keeps the two in
         // sync so the next handleChange delta is computed correctly.
         const newScrambled = "x".repeat(realValueRef.current.length);
-        requestAnimationFrame(() => {
-          input.value = newScrambled;
-          input.setSelectionRange(start, start);
-        });
+        input.value = newScrambled;
+        input.setSelectionRange(start, start);
       }
     };
 
@@ -762,7 +956,7 @@ export const FieldShieldInput = forwardRef<
      * password field, with an additional `aria-live` region that announces
      * when sensitive patterns are detected.
      */
-    if (a11yMode) {
+    if (effectiveA11yMode) {
       return (
         <div
           className={`fieldshield-container${className ? ` ${className}` : ""}`}
@@ -803,8 +997,10 @@ export const FieldShieldInput = forwardRef<
             spellCheck={false}
             autoComplete="off"
             aria-required={required}
+            aria-label={!label ? ariaLabel : undefined}
             aria-describedby={`${descriptionId} ${isUnsafe ? warningId : ""}`.trim()}
             aria-invalid={isUnsafe ? "true" : "false"}
+            aria-errormessage={isUnsafe ? warningId : undefined}
           />
 
           {/*
@@ -963,6 +1159,7 @@ export const FieldShieldInput = forwardRef<
               }
               aria-describedby={`${descriptionId} ${isUnsafe ? warningId : ""}`.trim()}
               aria-invalid={isUnsafe ? "true" : "false"}
+              aria-errormessage={isUnsafe ? warningId : undefined}
             />
           ) : (
             <input
@@ -991,6 +1188,7 @@ export const FieldShieldInput = forwardRef<
               }
               aria-describedby={`${descriptionId} ${isUnsafe ? warningId : ""}`.trim()}
               aria-invalid={isUnsafe ? "true" : "false"}
+              aria-errormessage={isUnsafe ? warningId : undefined}
             />
           )}
         </div>

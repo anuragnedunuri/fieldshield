@@ -7,14 +7,11 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/tests/setup.ts"],
+    exclude: ["e2e/**", "node_modules/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: [
-        "src/lib/**/*.ts",
-        "src/lib/**/*.tsx",
-        "src/patterns.ts",
-      ],
+      include: ["src/lib/**/*.ts", "src/lib/**/*.tsx", "src/patterns.ts"],
     },
   },
 });
