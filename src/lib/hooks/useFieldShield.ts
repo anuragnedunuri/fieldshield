@@ -112,6 +112,16 @@ export interface UseFieldShieldReturn {
    * demonstrable cleanup of sensitive data from application memory.
    */
   purge: () => void;
+
+  /**
+   * `true` if the Web Worker failed to initialize and the hook has fallen
+   * back to no-op mode. The consuming component should switch to `a11yMode`
+   * when this is `true` to ensure the field remains usable.
+   *
+   * Common causes: strict CSP blocking worker initialization, unsupported
+   * browser context (some sandboxed iframes), or browser memory pressure.
+   */
+  workerFailed: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -198,9 +208,11 @@ export const useFieldShield = (
   customPatterns: CustomPattern[] = [],
   maxProcessLength: number = DEFAULT_MAX_PROCESS_LENGTH,
   onMaxLengthExceeded?: (length: number, limit: number) => void,
+  onWorkerError?: (error: ErrorEvent) => void,
 ): UseFieldShieldReturn => {
   const [masked, setMasked] = useState("");
   const [findings, setFindings] = useState<string[]>([]);
+  const [workerFailed, setWorkerFailed] = useState(false);
   const workerRef = useRef<Worker | null>(null);
 
   /**
@@ -226,41 +238,61 @@ export const useFieldShield = (
      */
     let cancelled = false;
 
-    workerRef.current = new Worker(
-      new URL("../workers/fieldshield.worker.ts", import.meta.url),
-      { type: "module" },
-    );
+    // ── Item 11: Worker initialization fallback ──────────────────────────────
+    // Wrap in try/catch — new Worker() can throw in environments with strict
+    // CSP (worker-src 'none'), sandboxed iframes, or unsupported contexts.
+    // Without this guard the component throws on mount and renders nothing.
+    // On failure we set workerFailed = true so FieldShieldInput can fall back
+    // to a11yMode, keeping the field usable even without worker isolation.
+    try {
+      workerRef.current = new Worker(
+        new URL("../workers/fieldshield.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+    } catch (err) {
+      console.error(
+        "[FieldShield] Worker failed to initialize — falling back to a11yMode.",
+        err,
+      );
+      // queueMicrotask defers the state update out of the effect body,
+      // satisfying the "no setState in effect" rule while still updating
+      // before the first paint so the fallback render path activates.
+      queueMicrotask(() => setWorkerFailed(true));
+      return; // cleanup is a no-op — nothing was created
+    }
 
+    // ── Item 20: Worker message payload validation ───────────────────────────
+    // Validate message structure before touching state. An unvalidated UPDATE
+    // could set masked/findings to unexpected types if a malicious or malformed
+    // message is somehow delivered to the worker's port.
     workerRef.current.onmessage = (e: MessageEvent) => {
-      // Guard — discard any response that arrives after component unmount.
-      // Covers the race where the worker posts an UPDATE in the same tick
-      // that terminate() is called.
       if (cancelled) return;
 
-      if (e.data?.type === "UPDATE") {
+      if (
+        e.data?.type === "UPDATE" &&
+        typeof e.data.masked === "string" &&
+        Array.isArray(e.data.findings)
+      ) {
         setMasked(e.data.masked);
-        setFindings(e.data.findings);
+        setFindings(e.data.findings as string[]);
       }
     };
 
-    /**
-     * Log worker runtime errors so failures are not silently swallowed.
-     *
-     * Without this handler, a worker runtime error (e.g., a RegExp engine
-     * crash) is completely invisible — the worker stops responding but
-     * `onmessage` receives no error UPDATE. The field would continue sending
-     * PROCESS messages that never return, leaving `masked` and `findings`
-     * stale while `realValueRef` keeps accumulating real characters with no
-     * masking applied.
-     *
-     * Logging here surfaces the failure in DevTools immediately. The worker
-     * is NOT terminated — a transient error may not affect subsequent
-     * messages, and recreating the worker would lose `internalTruth`.
-     */
+    // ── Item 12: onWorkerError callback ──────────────────────────────────────
+    // Surfaces worker runtime errors to the consuming app via callback.
+    // Without this, a dead worker is completely invisible — the field silently
+    // stops scanning while the app believes it is protected.
+    // We reset masked/findings so the field does not freeze showing stale
+    // sensitive-data warnings. Worker is NOT terminated — a transient error
+    // may not affect subsequent messages, and recreation loses internalTruth.
     workerRef.current.onerror = (e: ErrorEvent): void => {
+      if (cancelled) return;
       console.error(
         `[FieldShield] Worker runtime error: ${e.message ?? "unknown error"}`,
       );
+      setMasked("");
+      setFindings([]);
+      onWorkerError?.(e);
     };
 
     /**
@@ -393,6 +425,7 @@ export const useFieldShield = (
 
       port1.onmessage = (event: MessageEvent<{ text: string }>) => {
         clearTimeout(timeout);
+        port1.close(); // release the port — no further messages expected
         resolve(event.data.text);
       };
 
@@ -410,5 +443,5 @@ export const useFieldShield = (
     workerRef.current?.postMessage({ type: "PURGE" });
   }, []);
 
-  return { masked, findings, processText, getSecureValue, purge };
+  return { masked, findings, processText, getSecureValue, purge, workerFailed };
 };

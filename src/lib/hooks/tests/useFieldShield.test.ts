@@ -642,3 +642,150 @@ describe("useFieldShield — performance benchmark", () => {
     expect(findings).toContain("EMAIL");
   }, 30_000); // generous timeout for jsdom synchronous processing
 });
+
+// ─── Worker initialization fallback (item 11) ────────────────────────────────
+
+describe("useFieldShield — worker initialization fallback", () => {
+  it("workerFailed is false when worker initializes successfully", () => {
+    const { result } = renderHook(() => useFieldShield());
+    expect(result.current.workerFailed).toBe(false);
+  });
+
+  it("workerFailed becomes true when Worker constructor throws", async () => {
+    // Temporarily replace Worker with one that always throws
+    vi.stubGlobal("Worker", () => {
+      throw new Error("CSP blocked worker initialization");
+    });
+
+    const { result } = renderHook(() => useFieldShield());
+
+    await waitFor(() => expect(result.current.workerFailed).toBe(true));
+
+    vi.unstubAllGlobals();
+    // Restore MockWorker for subsequent tests
+    vi.stubGlobal("Worker", MockWorker);
+  });
+
+  it("does not create a worker instance when constructor throws", async () => {
+    vi.stubGlobal("Worker", () => {
+      throw new Error("CSP blocked");
+    });
+
+    await act(async () => {
+      renderHook(() => useFieldShield());
+    });
+
+    // No MockWorker instances should have been pushed
+    expect(MockWorker.instances).toHaveLength(0);
+
+    vi.unstubAllGlobals();
+    vi.stubGlobal("Worker", MockWorker);
+  });
+});
+
+// ─── onWorkerError callback (item 12) ────────────────────────────────────────
+
+describe("useFieldShield — onWorkerError callback", () => {
+  it("calls onWorkerError when worker fires an error event", async () => {
+    const onWorkerError = vi.fn();
+    renderHook(() => useFieldShield([], undefined, undefined, onWorkerError));
+
+    await act(async () => {
+      getLatestWorker().simulateError("runtime crash");
+    });
+
+    expect(onWorkerError).toHaveBeenCalledOnce();
+    expect(onWorkerError.mock.calls[0][0]).toBeInstanceOf(ErrorEvent);
+  });
+
+  it("resets masked and findings when worker errors", async () => {
+    const { result } = renderHook(() => useFieldShield());
+    act(() => result.current.processText("123-45-6789"));
+    await waitFor(() => expect(result.current.findings).toContain("SSN"));
+
+    act(() => getLatestWorker().simulateError("crash"));
+    await waitFor(() => expect(result.current.findings).toEqual([]));
+  });
+
+  it("does not call onWorkerError after unmount", async () => {
+    const onWorkerError = vi.fn();
+    const { unmount } = renderHook(() =>
+      useFieldShield([], undefined, undefined, onWorkerError),
+    );
+    const worker = getLatestWorker();
+    unmount();
+
+    act(() => worker.simulateError("post-unmount error"));
+
+    expect(onWorkerError).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Worker message validation (item 20) ─────────────────────────────────────
+
+describe("useFieldShield — worker message validation", () => {
+  it("ignores UPDATE where masked is not a string", () => {
+    const { result } = renderHook(() => useFieldShield());
+    const worker = getLatestWorker();
+
+    act(() => {
+      worker.onmessage?.(
+        new MessageEvent("message", {
+          data: { type: "UPDATE", masked: 12345, findings: ["SSN"] },
+        }),
+      );
+    });
+
+    expect(result.current.masked).toBe("");
+    expect(result.current.findings).toEqual([]);
+  });
+
+  it("ignores UPDATE where findings is not an array", () => {
+    const { result } = renderHook(() => useFieldShield());
+    const worker = getLatestWorker();
+
+    act(() => {
+      worker.onmessage?.(
+        new MessageEvent("message", {
+          data: { type: "UPDATE", masked: "███", findings: "SSN" },
+        }),
+      );
+    });
+
+    expect(result.current.masked).toBe("");
+    expect(result.current.findings).toEqual([]);
+  });
+
+  it("accepts a valid UPDATE message", async () => {
+    const { result } = renderHook(() => useFieldShield());
+    const worker = getLatestWorker();
+
+    act(() => {
+      worker.onmessage?.(
+        new MessageEvent("message", {
+          data: { type: "UPDATE", masked: "███-██-████", findings: ["SSN"] },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.masked).toBe("███-██-████");
+      expect(result.current.findings).toEqual(["SSN"]);
+    });
+  });
+
+  it("ignores messages with unknown type", () => {
+    const { result } = renderHook(() => useFieldShield());
+    const worker = getLatestWorker();
+
+    act(() => {
+      worker.onmessage?.(
+        new MessageEvent("message", {
+          data: { type: "UNKNOWN", masked: "leaked", findings: [] },
+        }),
+      );
+    });
+
+    expect(result.current.masked).toBe("");
+  });
+});

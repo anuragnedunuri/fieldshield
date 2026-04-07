@@ -555,3 +555,66 @@ test.describe("Form submission", () => {
     });
   });
 });
+
+// ─── 10. Worker initialization fallback ──────────────────────────────────────
+
+test.describe("Worker initialization fallback", () => {
+  test("renders password input when Worker constructor is blocked", async ({
+    page,
+  }) => {
+    // Inject script before app loads — overrides Worker so it always throws,
+    // simulating a strict CSP that blocks worker-src.
+    // addInitScript runs before any page scripts so the override is in place
+    // before React mounts and useFieldShield tries to create the worker.
+    await page.addInitScript(() => {
+      (window as Window & { Worker: unknown }).Worker = class {
+        constructor() {
+          throw new Error("worker-src CSP blocked");
+        }
+      };
+    });
+
+    await page.goto("/");
+    await page.waitForSelector(".fieldshield-container");
+
+    // All fields should fall back to type=password
+    const passwordInputs = page.locator("input[type=password]");
+    await expect(passwordInputs.first()).toBeVisible({ timeout: 3000 });
+  });
+
+  test("password fallback field is still operable", async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as Window & { Worker: unknown }).Worker = class {
+        constructor() {
+          throw new Error("worker-src CSP blocked");
+        }
+      };
+    });
+
+    await page.goto("/");
+    await page.waitForSelector(".fieldshield-container");
+
+    // Should be able to type into the fallback field
+    const input = page.locator("input[type=password]").first();
+    await input.fill("123-45-6789");
+    const value = await input.inputValue();
+    expect(value).toBe("123-45-6789");
+  });
+
+  test("no scrambling overlay in fallback mode", async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as Window & { Worker: unknown }).Worker = class {
+        constructor() {
+          throw new Error("worker-src CSP blocked");
+        }
+      };
+    });
+
+    await page.goto("/");
+    await page.waitForSelector(".fieldshield-container");
+
+    // The mask layer overlay should not be present — native masking handles it
+    const maskLayers = page.locator(".fieldshield-mask-layer");
+    expect(await maskLayers.count()).toBe(0);
+  });
+});

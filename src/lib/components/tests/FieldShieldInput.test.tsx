@@ -779,6 +779,58 @@ describe("FieldShieldInput — worker onerror recovery", () => {
   });
 });
 
+// ─── Worker initialization fallback (item 11) ────────────────────────────────
+
+describe("FieldShieldInput — worker initialization fallback", () => {
+  it("renders type=password when worker fails to initialize", async () => {
+    vi.stubGlobal("Worker", () => {
+      throw new Error("CSP blocked worker initialization");
+    });
+
+    render(<FieldShieldInput label="SSN" />);
+
+    await waitFor(() => {
+      expect(
+        document.querySelector("input[type=password]"),
+      ).toBeInTheDocument();
+    });
+
+    vi.unstubAllGlobals();
+    vi.stubGlobal("Worker", MockWorker);
+  });
+
+  it("does not render the mask layer when worker fails", async () => {
+    vi.stubGlobal("Worker", () => {
+      throw new Error("CSP blocked");
+    });
+
+    render(<FieldShieldInput label="SSN" />);
+
+    await waitFor(() => {
+      expect(
+        document.querySelector(".fieldshield-mask-layer"),
+      ).not.toBeInTheDocument();
+    });
+
+    vi.unstubAllGlobals();
+    vi.stubGlobal("Worker", MockWorker);
+  });
+
+  it("calls onWorkerError when the worker fires a runtime error", async () => {
+    const onWorkerError = vi.fn();
+    render(<FieldShieldInput label="SSN" onWorkerError={onWorkerError} />);
+    await userEvent.type(screen.getByRole("textbox"), "hello");
+    await waitForWorkerUpdate();
+
+    await act(async () => {
+      getLatestWorker().simulateError("runtime crash");
+    });
+
+    expect(onWorkerError).toHaveBeenCalledOnce();
+    expect(onWorkerError.mock.calls[0][0]).toBeInstanceOf(ErrorEvent);
+  });
+});
+
 // ─── className / style passthrough ───────────────────────────────────────────
 
 describe("FieldShieldInput — className and style props", () => {

@@ -1,19 +1,79 @@
 {
-  "name": "react-ai-sentinel",
-  "private": true,
-  "version": "0.0.0",
+  "name": "fieldshield",
+  "version": "1.0.0",
+  "description": "Sensitive input protection for React — prevents DOM scraping, clipboard exfiltration, and accidental PHI exposure in healthcare and fintech applications.",
   "type": "module",
+  "license": "MIT",
+  "author": "Anurag <your-email@example.com>",
+  "homepage": "https://github.com/YOUR_USERNAME/fieldshield#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/fieldshield.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/fieldshield/issues"
+  },
+  "keywords": [
+    "react",
+    "security",
+    "input",
+    "pii",
+    "phi",
+    "hipaa",
+    "pci-dss",
+    "clipboard",
+    "web-worker",
+    "sensitive-data",
+    "healthcare",
+    "fintech",
+    "dom-security",
+    "data-protection"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "THREAT_MODEL.md"
+  ],
+  "main": "./dist/fieldshield.umd.cjs",
+  "module": "./dist/fieldshield.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/fieldshield.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/fieldshield.umd.cjs"
+      }
+    }
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react-dom": {
+      "optional": true
+    }
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:lib": "vite build --mode lib && tsc -p tsconfig.lib.json && node -e \"require('fs').copyFileSync('dist/index.d.ts','dist/index.d.cts')\"",
     "lint": "eslint .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "prepublishOnly": "npm run build:lib"
   },
   "devDependencies": {
+    "@axe-core/react": "^4.11.1",
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",
@@ -28,9 +88,12 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "jsdom": "^28.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
     "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "vitest-axe": "^0.1.0"
   }
 }

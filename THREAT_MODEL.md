@@ -27,17 +27,21 @@ This document is intended for security engineers, compliance officers, and audit
 
 FieldShield protects the following data categories when entered into or pasted into a FieldShieldInput field:
 
-**Personally Identifiable Information (PII)**
+**Personally Identifiable Information (PII)** — 6 built-in patterns
+
 - US Social Security Numbers (SSN)
 - Email addresses
 - Phone numbers (US and international)
 - Credit card numbers (Visa, Mastercard, Amex)
-- International Bank Account Numbers (IBAN)
-- Passport numbers (US, EU, India formats)
 - Dates of birth
 - US Tax IDs / EINs
 
-**Credentials and secrets**
+**Healthcare identifiers** — 1 built-in pattern
+
+- UK National Insurance Numbers (NIN) — equivalent of US SSN for UK residents
+
+**Credentials and secrets** — 6 built-in patterns
+
 - AI API keys (OpenAI, Anthropic, Google)
 - AWS access keys (permanent and temporary)
 - GitHub personal access tokens (all formats)
@@ -46,6 +50,21 @@ FieldShield protects the following data categories when entered into or pasted i
 - PEM private key blocks (RSA, EC, OpenSSH)
 
 **Custom data types** defined by the consuming application via `customPatterns`.
+
+**Opt-in protected assets** — available via `OPT_IN_PATTERNS`, not active by default
+
+The following identifiers are available as opt-in patterns. They were excluded from the defaults because their regex structure produces high false positive rates in free-text and clinical note fields, which degrades usability without improving security. Enable them via `customPatterns` only on fields where the specific data type is the expected input.
+
+- International Bank Account Numbers (IBAN) — `IBAN`
+  Pattern `[A-Z]{2}\d{2}...` matches laboratory accession numbers, specimen container IDs, reagent lot codes, and GS1 product codes common in healthcare contexts.
+- US DEA Registration Numbers — `DEA_NUMBER`
+  Pattern `[A-Z]{2}\d{7}` matches pharmaceutical lot numbers, product batch codes, and laboratory reagent IDs common in clinical notes and pharmacy systems.
+- Passport numbers (US, EU, India formats) — `PASSPORT_NUMBER`
+  Pattern `[A-Z]{1,2}[0-9]{6,9}` matches medication lot numbers, ICD-10 codes, and specimen IDs.
+- US National Provider Identifiers (NPI) — `NPI_NUMBER`
+  Pattern `[12]\d{9}` matches any 10-digit number starting with 1 or 2; ubiquitous in free text.
+- SWIFT / BIC codes — `SWIFT_BIC`
+  Pattern `[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}` matches any 8-letter word; high false positive rate in clinical notes.
 
 ---
 
@@ -123,6 +142,26 @@ The consuming application can block the paste entirely by returning `false` from
 
 ---
 
+### T8 — Worker initialization failure leaving field unprotected
+
+**Threat:** The Web Worker fails to initialize — due to a strict CSP (`worker-src 'none'`), a sandboxed iframe context, or browser memory pressure — and the component renders without protection. The user continues to type, but no masking or pattern detection occurs. The form appears functional but sensitive data is unprotected.
+
+**Mitigation:** Worker instantiation is wrapped in a try/catch. On failure, `workerFailed` is set to `true` and the component automatically falls back to `a11yMode` — a native `type="password"` input with browser-native masking. Pattern detection is suspended in this state but clipboard protection and the native masking layer remain active. A `console.error` fires so developers see the fallback in DevTools. The consuming app can wire `onWorkerError` to surface a warning to the user.
+
+**Verification:** Playwright tests confirm that when the Worker constructor is blocked via `page.addInitScript`, all fields render `type=password` inputs and the scrambling overlay is absent.
+
+---
+
+### T9 — Malformed worker message manipulating UI state
+
+**Threat:** A malicious or malformed message is delivered to the worker's `onmessage` handler with unexpected payload types — for example, `masked` as a number or `findings` as a string. This could corrupt the `masked` display string or the `findings` array, causing the UI to show incorrect security state.
+
+**Mitigation:** The `onmessage` handler validates payload structure before setting state — `typeof e.data.masked === "string"` and `Array.isArray(e.data.findings)` are both checked. Messages that fail validation are silently discarded. Only the message type `"UPDATE"` triggers state updates — all other message types are ignored.
+
+**Verification:** Unit tests confirm that UPDATE messages with non-string `masked` or non-array `findings` are discarded and state remains unchanged.
+
+---
+
 ## Threats not mitigated
 
 ### N1 — Kernel-level and debugger access
@@ -179,7 +218,21 @@ A compromised third-party JavaScript library loaded on the same page, a React De
 
 ---
 
-### N6 — Cross-field sensitive data combination
+### N6 — Unstructured PHI and context-dependent identifiers
+
+FieldShield detects structured sensitive data with recognisable formats. It does not detect unstructured PHI such as patient names, street addresses, facility names, or free-text clinical descriptions.
+
+These identifiers cannot be detected reliably with regex. `"John Smith"` as a patient name is structurally identical to `"John Smith"` as a company name. Named Entity Recognition (NER) with semantic context is required — not pattern matching.
+
+Additionally, some identifiers detected by FieldShield are individually non-sensitive but become PHI in context. NPI numbers are publicly searchable via the CMS NPPES registry. SWIFT/BIC codes identify banks, not individuals. FieldShield detects both because they frequently appear alongside PHI in clinical and fintech form fields — the detection is a signal of likely combination sensitivity, not a guarantee.
+
+**Why not mitigated:** Regex-based detection of free-text names and addresses produces an unacceptable false positive rate. A pattern broad enough to catch arbitrary names would flag ordinary prose constantly.
+
+**Recommendation:** Implement server-side NER-based PHI detection for clinical notes fields. FieldShield provides defence-in-depth for structured identifiers — it is not a complete HIPAA de-identification solution. HIPAA's Safe Harbor method lists 18 identifier categories; FieldShield covers a subset.
+
+---
+
+### N7 — Cross-field sensitive data combination
 
 FieldShield detects sensitive patterns within a single field. It does not detect that a first name in one field combined with an SSN in another field constitutes a HIPAA minimum necessary data set or a linkable record.
 
@@ -189,7 +242,7 @@ FieldShield detects sensitive patterns within a single field. It does not detect
 
 ---
 
-### N7 — Server-side exposure
+### N8 — Server-side exposure
 
 FieldShield protects data on the client side during input. Once `collectSecureValues` or `getSecureValue` returns plaintext to the application and that data is sent to a backend, FieldShield has no involvement in server-side storage, logging, or access controls.
 
@@ -199,7 +252,7 @@ FieldShield protects data on the client side during input. Once `collectSecureVa
 
 ---
 
-### N8 — IME composition (v1)
+### N9 — IME composition (v1)
 
 Input Method Editors (CJK input, voice-to-text via browser) may not be correctly reconstructed in `realValueRef` during composition events. The real value stored in the worker may be incorrect for composed input.
 
@@ -225,6 +278,10 @@ FieldShield's security properties depend on the following environment assumption
 
 **A6 — React DevTools are not enabled in production.** React DevTools can traverse the fiber tree and read ref values. FieldShield should not be deployed with React DevTools enabled in production builds.
 
+**A7 — Content Security Policy restricts worker origins.** FieldShield's worker isolation guarantee is strongest when a `worker-src 'self'` CSP directive is in place. Without it, a tampered build pipeline or compromised CDN could theoretically substitute a malicious worker. The CSP directive is not required for the library to function but is strongly recommended for regulated environments.
+
+**A8 — The worker source has not been tampered with.** FieldShield's no-network guarantee is verifiable by inspecting `fieldshield.worker.ts` — it has zero imports and zero network API calls. If your build pipeline produces the worker from this source without modification, the guarantee holds. Subresource Integrity (SRI) verification on the worker script provides additional assurance.
+
 ---
 
 ## Architecture security properties
@@ -236,6 +293,14 @@ The Web Worker thread is a dedicated worker — it has no shared memory with the
 ### MessageChannel point-to-point delivery
 
 `GET_TRUTH` responses travel via a `MessageChannel` port, not via the broadcast `postMessage` channel. Browser extensions that monitor `window.postMessage` events cannot intercept `MessageChannel` messages because they are delivered directly to the specific port, not broadcast to all listeners on the page.
+
+`port1` is explicitly closed after the response is received to release the port and eliminate any residual attack surface from an open channel.
+
+### No-network guarantee
+
+The worker contains no calls to `fetch()`, `XMLHttpRequest`, `WebSocket`, `EventSource`, or `navigator.sendBeacon()`. It communicates exclusively via `postMessage`. This is verifiable by inspecting the worker source directly — the `@security NO NETWORK ACCESS` comment at the top of the file is a documented, auditor-facing assertion of this property.
+
+Enforce this guarantee at the infrastructure level with `worker-src 'self'` in your Content Security Policy. See the [Content Security Policy](#content-security-policy) section of the README for a full recommended CSP configuration.
 
 ### Pattern source string design
 
@@ -253,31 +318,34 @@ A `cancelled` boolean in the worker lifecycle effect prevents state updates from
 
 ## Residual risks
 
-| Risk | Severity | Mitigation in FieldShield | Recommended application control |
-|---|---|---|---|
-| `realValueRef` readable on main thread during typing | Medium | Stored in ref, not state or DOM | Strict CSP, third-party script audit |
-| `GET_TRUTH` callable by any main thread code | Medium | None in v1 | Scope refs, audit third-party JS |
-| OS keylogger captures keystrokes | High | None — out of scope | Managed devices, EDR |
-| Debugger access to worker memory | High | None — out of scope | Production build hardening |
-| IME composition value reconstruction | Low | None in v1 | Use a11yMode for CJK input |
-| Regex backtracking beyond maxProcessLength | Low | maxProcessLength blocks input | Set appropriate limit per field |
-| Server-side exposure after submission | High | None — out of scope | Field-level encryption, tokenization |
-| Third-party script on same page | Medium | None — out of scope | CSP script-src whitelist |
+| Risk                                                 | Severity | Mitigation in FieldShield                  | Recommended application control      |
+| ---------------------------------------------------- | -------- | ------------------------------------------ | ------------------------------------ |
+| `realValueRef` readable on main thread during typing | Medium   | Stored in ref, not state or DOM            | Strict CSP, third-party script audit |
+| `GET_TRUTH` callable by any main thread code         | Medium   | None in v1                                 | Scope refs, audit third-party JS     |
+| Worker init failure leaving field unprotected        | Medium   | Auto-fallback to a11yMode + console.error  | Wire onWorkerError, surface warning  |
+| Malformed worker message corrupting UI state         | Low      | Payload validated before state update      | None required                        |
+| OS keylogger captures keystrokes                     | High     | None — out of scope                        | Managed devices, EDR                 |
+| Debugger access to worker memory                     | High     | None — out of scope                        | Production build hardening           |
+| IME composition value reconstruction                 | Low      | None in v1                                 | Use a11yMode for CJK input           |
+| Regex backtracking beyond maxProcessLength           | Low      | maxProcessLength blocks input              | Set appropriate limit per field      |
+| Server-side exposure after submission                | High     | None — out of scope                        | Field-level encryption, tokenization |
+| Third-party script on same page                      | Medium   | None — out of scope                        | CSP script-src whitelist             |
+| Unstructured PHI (names, addresses)                  | High     | None — regex cannot detect free-text names | Server-side NER-based PHI detection  |
 
 ---
 
 ## Compliance mapping
 
-| Control | Framework | FieldShield coverage |
-|---|---|---|
-| Technical access controls on ePHI | HIPAA § 164.312(a) | Worker isolation prevents DOM access to sensitive values |
-| Audit controls | HIPAA § 164.312(b) | `useSecurityLog` provides structured clipboard and submission audit trail |
-| Transmission security | HIPAA § 164.312(e) | `MessageChannel` prevents broadcast interception — application must implement TLS |
-| Protect stored cardholder data | PCI-DSS Req 3 | DOM never contains card numbers — application must implement server-side encryption |
-| Protect web-facing applications | PCI-DSS Req 6.4 | Clipboard interception prevents browser-based skimming of card input |
-| Logical access controls | SOC 2 CC6.1 | `getSecureValue()` is the only retrieval path — no DOM access to sensitive values |
-| Availability | SOC 2 A1 | `maxProcessLength` prevents DoS via adversarial input |
-| Change management | SOC 2 CC8.1 | All patterns versioned in `patterns.ts` — changes are tracked in git history |
+| Control                           | Framework          | FieldShield coverage                                                                              |
+| --------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| Technical access controls on ePHI | HIPAA § 164.312(a) | Worker isolation prevents DOM access; NPI and DEA patterns detect healthcare identifiers in forms |
+| Audit controls                    | HIPAA § 164.312(b) | `useSecurityLog` provides structured clipboard and submission audit trail                         |
+| Transmission security             | HIPAA § 164.312(e) | `MessageChannel` prevents broadcast interception — application must implement TLS                 |
+| Protect stored cardholder data    | PCI-DSS Req 3      | DOM never contains card numbers — application must implement server-side encryption               |
+| Protect web-facing applications   | PCI-DSS Req 6.4    | Clipboard interception prevents browser-based skimming; SWIFT/BIC detection flags wire transfers  |
+| Logical access controls           | SOC 2 CC6.1        | `getSecureValue()` is the only retrieval path — no DOM access to sensitive values                 |
+| Availability                      | SOC 2 A1           | `maxProcessLength` prevents DoS; worker init fallback keeps field usable if worker unavailable    |
+| Change management                 | SOC 2 CC8.1        | All patterns versioned in `patterns.ts` — changes are tracked in git history and CHANGELOG        |
 
 ---
 

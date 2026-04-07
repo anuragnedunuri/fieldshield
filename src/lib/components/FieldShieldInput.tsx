@@ -127,8 +127,10 @@ export interface FieldShieldInputProps {
   placeholder?: string;
 
   /**
-   * Additional sensitive-data patterns to layer on top of the built-in
-   * defaults (SSN, EMAIL, PHONE, CREDIT_CARD, IBAN, AI_API_KEY, AWS_ACCESS_KEY).
+   * Additional sensitive-data patterns to layer on top of the 15 built-in
+   * defaults. See `FIELDSHIELD_PATTERNS` for the full list. Opt-in patterns
+   * (`SWIFT_BIC`, `NPI_NUMBER`, `PASSPORT_NUMBER`) can be added here from
+   * `OPT_IN_PATTERNS` when the field context warrants them.
    *
    * @example
    * ```tsx
@@ -288,6 +290,31 @@ export interface FieldShieldInputProps {
   onMaxLengthExceeded?: (length: number, limit: number) => void;
 
   /**
+   * Called when the Web Worker encounters a runtime error.
+   *
+   * When this fires, FieldShieldInput has already reset `masked` and
+   * `findings` to empty so the field does not freeze showing stale warnings.
+   * The worker is NOT terminated — a transient error may not affect subsequent
+   * messages. If the error is persistent, consider displaying a warning and
+   * asking the user to refresh.
+   *
+   * If the worker fails to initialize entirely (e.g. due to a strict CSP),
+   * the component automatically falls back to `a11yMode` — this callback is
+   * NOT called in that case. Listen for the `a11yMode` fallback by providing
+   * `onWorkerError` and checking whether `e.message` contains "initialize".
+   *
+   * @param error - The ErrorEvent from the worker's onerror handler.
+   *
+   * @example
+   * ```tsx
+   * onWorkerError={(e) =>
+   *   console.error("FieldShield worker error:", e.message)
+   * }
+   * ```
+   */
+  onWorkerError?: (error: ErrorEvent) => void;
+
+  /**
    * Initial number of visible text rows. Only applies when `type="textarea"`.
    * Sets a minimum height — the field still auto-grows beyond this value as
    * the user types.
@@ -378,11 +405,30 @@ export const FieldShieldInput = forwardRef<
       inputMode = "text",
       maxProcessLength = 100_000,
       onMaxLengthExceeded,
+      onWorkerError,
     },
     ref,
   ) => {
-    const { masked, findings, processText, getSecureValue, purge } =
-      useFieldShield(customPatterns, maxProcessLength, onMaxLengthExceeded);
+    const {
+      masked,
+      findings,
+      processText,
+      getSecureValue,
+      purge,
+      workerFailed,
+    } = useFieldShield(
+      customPatterns,
+      maxProcessLength,
+      onMaxLengthExceeded,
+      onWorkerError,
+    );
+
+    // Auto-activate a11yMode if the worker failed to initialize.
+    // This keeps the field fully usable (native password masking + clipboard
+    // protection) even in environments where Workers are unavailable.
+    // The consumer's explicit a11yMode prop is also respected — either
+    // condition activates the fallback render path.
+    const effectiveA11yMode = a11yMode || workerFailed;
 
     const isUnsafe = findings.length > 0;
 
@@ -910,7 +956,7 @@ export const FieldShieldInput = forwardRef<
      * password field, with an additional `aria-live` region that announces
      * when sensitive patterns are detected.
      */
-    if (a11yMode) {
+    if (effectiveA11yMode) {
       return (
         <div
           className={`fieldshield-container${className ? ` ${className}` : ""}`}
@@ -951,8 +997,10 @@ export const FieldShieldInput = forwardRef<
             spellCheck={false}
             autoComplete="off"
             aria-required={required}
+            aria-label={!label ? ariaLabel : undefined}
             aria-describedby={`${descriptionId} ${isUnsafe ? warningId : ""}`.trim()}
             aria-invalid={isUnsafe ? "true" : "false"}
+            aria-errormessage={isUnsafe ? warningId : undefined}
           />
 
           {/*
@@ -1111,6 +1159,7 @@ export const FieldShieldInput = forwardRef<
               }
               aria-describedby={`${descriptionId} ${isUnsafe ? warningId : ""}`.trim()}
               aria-invalid={isUnsafe ? "true" : "false"}
+              aria-errormessage={isUnsafe ? warningId : undefined}
             />
           ) : (
             <input
@@ -1139,6 +1188,7 @@ export const FieldShieldInput = forwardRef<
               }
               aria-describedby={`${descriptionId} ${isUnsafe ? warningId : ""}`.trim()}
               aria-invalid={isUnsafe ? "true" : "false"}
+              aria-errormessage={isUnsafe ? warningId : undefined}
             />
           )}
         </div>

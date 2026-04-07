@@ -48,6 +48,12 @@ if (typeof ClipboardEvent === "undefined") {
   } as unknown as typeof ClipboardEvent;
 }
 
+// ─── Canvas stub ─────────────────────────────────────────────────────────────
+// Silence jsdom HTMLCanvasElement warning — jsdom does not implement
+// the Canvas API. FieldShield does not use canvas. This warning comes
+// from testing dependencies that incidentally reference canvas.
+HTMLCanvasElement.prototype.getContext = () => null;
+
 // ─── MockWorker ───────────────────────────────────────────────────────────────
 
 export class MockWorker {

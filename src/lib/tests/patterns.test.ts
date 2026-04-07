@@ -13,12 +13,20 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { FIELDSHIELD_PATTERNS } from "../patterns";
+import { FIELDSHIELD_PATTERNS, OPT_IN_PATTERNS } from "../patterns";
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function match(key: keyof typeof FIELDSHIELD_PATTERNS, input: string): boolean {
   const re = new RegExp(FIELDSHIELD_PATTERNS[key], "gi");
+  return re.test(input);
+}
+
+function matchOptIn(
+  key: keyof typeof OPT_IN_PATTERNS,
+  input: string,
+): boolean {
+  const re = new RegExp(OPT_IN_PATTERNS[key], "gi");
   return re.test(input);
 }
 
@@ -151,33 +159,6 @@ describe("FIELDSHIELD_PATTERNS.CREDIT_CARD", () => {
   });
 });
 
-// ─── IBAN ─────────────────────────────────────────────────────────────────────
-
-describe("FIELDSHIELD_PATTERNS.IBAN", () => {
-  const should: [string, string][] = [
-    ["GB82WEST12345698765432", "UK no spaces"],
-    ["GB82 WEST 1234 5698 7654 32", "UK standard printed format"],
-    ["DE89370400440532013000", "German no spaces"],
-    ["DE89 3704 0044 0532 0130 00", "German with spaces"],
-    ["FR7630006000011234567890189", "French no spaces"],
-    ["NL91ABNA0417164300", "Dutch no spaces"],
-  ];
-
-  const shouldNot: [string, string][] = [
-    ["AB12", "too short"],
-    ["1234567890", "no country code"],
-    ["", "empty"],
-  ];
-
-  it.each(should)("matches '%s' (%s)", (input) => {
-    expect(match("IBAN", input)).toBe(true);
-  });
-
-  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
-    expect(match("IBAN", input)).toBe(false);
-  });
-});
-
 // ─── AI_API_KEY ───────────────────────────────────────────────────────────────
 
 describe("FIELDSHIELD_PATTERNS.AI_API_KEY", () => {
@@ -229,32 +210,6 @@ describe("FIELDSHIELD_PATTERNS.AWS_ACCESS_KEY", () => {
   });
 });
 
-// ─── PASSPORT_NUMBER ─────────────────────────────────────────────────────────
-
-describe("FIELDSHIELD_PATTERNS.PASSPORT_NUMBER", () => {
-  const should: [string, string][] = [
-    ["A1234567", "US — 1 letter + 7 digits"],
-    ["A12345678", "US — 1 letter + 8 digits"],
-    ["AB1234567", "EU — 2 letters + 7 digits"],
-    ["P12345678", "P + 8 digits"],
-  ];
-
-  const shouldNot: [string, string][] = [
-    ["A123", "too short"],
-    ["ABC1234567", "3 letters — exceeds pattern"],
-    ["123456789", "digits only"],
-    ["ABCDEFGH", "letters only"],
-    ["", "empty"],
-  ];
-
-  it.each(should)("matches '%s' (%s)", (input) => {
-    expect(match("PASSPORT_NUMBER", input)).toBe(true);
-  });
-
-  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
-    expect(match("PASSPORT_NUMBER", input)).toBe(false);
-  });
-});
 
 // ─── DATE_OF_BIRTH ────────────────────────────────────────────────────────────
 
@@ -427,6 +382,239 @@ describe("FIELDSHIELD_PATTERNS.PRIVATE_KEY_BLOCK", () => {
 
   it.each(shouldNot)("does not match '%s' (%s)", (input) => {
     expect(match("PRIVATE_KEY_BLOCK", input)).toBe(false);
+  });
+});
+
+
+// ─── UK_NIN ───────────────────────────────────────────────────────────────────
+
+describe("FIELDSHIELD_PATTERNS.UK_NIN", () => {
+  const should: [string, string][] = [
+    ["AB 12 34 56 C", "standard spaced format"],
+    ["AB123456C", "compact no-space format"],
+    ["ZZ 12 34 56 D", "valid prefix ZZ, suffix D"],
+    ["AA123456B", "compact, suffix B"],
+    ["TN 12 34 56 C", "valid TN prefix"],
+  ];
+
+  const shouldNot: [string, string][] = [
+    ["AB 12 34 56 E", "invalid suffix E"],
+    ["AB 12 34 56 5", "numeric suffix"],
+    ["D1 12 34 56 A", "invalid first letter D"],
+    ["Q1 12 34 56 A", "invalid first letter Q — excluded from valid range"],
+    ["QQ 12 34 56 A", "invalid first letter Q — excluded from valid range"],
+    ["AB 12 34 56", "missing suffix"],
+    ["AB1234567C", "7 digits instead of 6"],
+    ["", "empty string"],
+    ["AB 12 34 56 AB", "double letter suffix"],
+  ];
+
+  it.each(should)("matches '%s' (%s)", (input) => {
+    expect(match("UK_NIN", input)).toBe(true);
+  });
+
+  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
+    expect(match("UK_NIN", input)).toBe(false);
+  });
+
+  it("matches NIN embedded in form text", () => {
+    expect(match("UK_NIN", "National Insurance Number: AB 12 34 56 C")).toBe(
+      true,
+    );
+  });
+
+  it("matches both spaced and compact in the same string", () => {
+    const input = "Primary: AB 12 34 56 C, Secondary: CD345678A";
+    expect(match("UK_NIN", input)).toBe(true);
+  });
+});
+
+
+// ─── OPT_IN_PATTERNS ─────────────────────────────────────────────────────────
+//
+// These five patterns were removed from FIELDSHIELD_PATTERNS defaults due to
+// high false positive rates in free-text and clinical note fields. They are
+// exported separately in OPT_IN_PATTERNS for use via customPatterns on fields
+// where the specific data type is known to be expected.
+
+describe("OPT_IN_PATTERNS.IBAN", () => {
+  const should: [string, string][] = [
+    ["GB82WEST12345698765432", "UK no spaces"],
+    ["GB82 WEST 1234 5698 7654 32", "UK standard printed format"],
+    ["DE89370400440532013000", "German no spaces"],
+    ["DE89 3704 0044 0532 0130 00", "German with spaces"],
+    ["FR7630006000011234567890189", "French no spaces"],
+    ["NL91ABNA0417164300", "Dutch no spaces"],
+  ];
+
+  const shouldNot: [string, string][] = [
+    ["AB12", "too short"],
+    ["1234567890", "no country code"],
+    ["", "empty"],
+  ];
+
+  it.each(should)("matches '%s' (%s)", (input) => {
+    expect(matchOptIn("IBAN", input)).toBe(true);
+  });
+
+  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
+    expect(matchOptIn("IBAN", input)).toBe(false);
+  });
+});
+
+describe("OPT_IN_PATTERNS.DEA_NUMBER", () => {
+  const should: [string, string][] = [
+    ["AB1234563", "practitioner type B, last name A"],
+    ["BX9876541", "hospital type B, last name X"],
+    ["MJ5678901", "narcotic treatment program, last name J"],
+    ["XZ1234567", "suboxone prescriber, last name Z"],
+    ["FP2345678", "distributor type F, last name P"],
+    ["ab1234563", "lowercase — matches due to case-insensitive gi flags"],
+  ];
+
+  const shouldNot: [string, string][] = [
+    ["AB123456", "only 6 digits — too short"],
+    ["AB12345678", "8 digits — too long"],
+    ["1B1234563", "starts with digit — invalid first char"],
+    ["AA123456Z", "letter in digit section"],
+    ["", "empty string"],
+  ];
+
+  it.each(should)("matches '%s' (%s)", (input) => {
+    expect(matchOptIn("DEA_NUMBER", input)).toBe(true);
+  });
+
+  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
+    expect(matchOptIn("DEA_NUMBER", input)).toBe(false);
+  });
+
+  it("matches DEA number embedded in prescriber field text", () => {
+    expect(matchOptIn("DEA_NUMBER", "DEA Reg: AB1234563 expires 2025")).toBe(
+      true,
+    );
+  });
+
+  it("does not match invalid registrant type prefix", () => {
+    // I, N, O, V, W, Y, Z are not valid DEA registrant type codes
+    expect(matchOptIn("DEA_NUMBER", "IB1234563")).toBe(false);
+    expect(matchOptIn("DEA_NUMBER", "NB1234563")).toBe(false);
+  });
+
+  it("does not match pharmaceutical lot number false positive", () => {
+    // AB1234567 matches the DEA pattern — this documents the false positive risk
+    // that drives opt-in status. On a clinical free-text field this would fire.
+    // The test confirms the pattern DOES match such strings (opt-in risk, not a bug).
+    expect(matchOptIn("DEA_NUMBER", "Lot: AB1234567")).toBe(true);
+  });
+});
+
+describe("OPT_IN_PATTERNS.SWIFT_BIC", () => {
+  const should: [string, string][] = [
+    ["DEUTDEDB", "Deutsche Bank 8-char (head office)"],
+    ["DEUTDEDBBER", "Deutsche Bank 11-char (Berlin branch)"],
+    ["BOFAUS3N", "Bank of America US"],
+    ["CHASUS33", "JPMorgan Chase"],
+    ["NWBKGB2L", "NatWest UK"],
+    ["BNPAFRPP", "BNP Paribas France"],
+    ["deutdedb", "lowercase — matches due to case-insensitive gi flags"],
+  ];
+
+  const shouldNot: [string, string][] = [
+    ["DEUT", "only 4 chars — too short"],
+    ["DEUTDEDBB", "9 chars — invalid length"],
+    ["DEUTDEDBBERX", "12 chars — too long"],
+    ["1234DE56", "bank code starts with digits"],
+    // Word boundary protection: a word longer than 11 chars has no \b after position 11
+    // so neither the 8-char nor the 11-char alternative can anchor. Note: standalone
+    // 8- or 11-letter words DO match (e.g. "NEPHROPATHY") — that is the false positive
+    // risk driving this pattern to opt-in status.
+    ["NEPHROPATHYXYZ", "word longer than 11 letters — no word boundary after BIC length"],
+    ["", "empty string"],
+  ];
+
+  it.each(should)("matches '%s' (%s)", (input) => {
+    expect(matchOptIn("SWIFT_BIC", input)).toBe(true);
+  });
+
+  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
+    expect(matchOptIn("SWIFT_BIC", input)).toBe(false);
+  });
+
+  it("matches SWIFT code embedded in wire transfer instructions", () => {
+    expect(
+      matchOptIn("SWIFT_BIC", "Please send to DEUTDEDBBER, account 12345"),
+    ).toBe(true);
+  });
+
+  it("matches both 8 and 11 character forms in same string", () => {
+    const input = "Primary: BOFAUS3N, Branch: DEUTDEDBBER";
+    expect(matchOptIn("SWIFT_BIC", input)).toBe(true);
+  });
+});
+
+describe("OPT_IN_PATTERNS.NPI_NUMBER", () => {
+  const should: [string, string][] = [
+    ["1234567893", "Type 1 individual provider"],
+    ["2345678901", "Type 2 organization"],
+    ["1000000000", "minimum Type 1"],
+    ["1999999999", "maximum Type 1 range"],
+    ["2000000000", "minimum Type 2"],
+  ];
+
+  const shouldNot: [string, string][] = [
+    ["3234567890", "starts with 3 — invalid NPI prefix"],
+    ["0234567890", "starts with 0 — invalid NPI prefix"],
+    ["123456789", "9 digits — too short"],
+    ["12345678901", "11 digits — too long"],
+    ["123456789A", "contains letter"],
+    ["", "empty string"],
+  ];
+
+  it.each(should)("matches '%s' (%s)", (input) => {
+    expect(matchOptIn("NPI_NUMBER", input)).toBe(true);
+  });
+
+  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
+    expect(matchOptIn("NPI_NUMBER", input)).toBe(false);
+  });
+
+  it("matches NPI embedded in surrounding text", () => {
+    expect(matchOptIn("NPI_NUMBER", "Provider NPI: 1234567893 on file")).toBe(
+      true,
+    );
+  });
+
+  it("does not match when preceded by extra digits", () => {
+    expect(matchOptIn("NPI_NUMBER", "ID: 91234567893")).toBe(false);
+  });
+});
+
+describe("OPT_IN_PATTERNS.PASSPORT_NUMBER", () => {
+  const should: [string, string][] = [
+    ["A1234567", "India — 1 letter + 7 digits"],
+    ["A12345678", "US — 1 letter + 8 digits"],
+    ["AB1234567", "EU — 2 letters + 7 digits"],
+    ["P12345678", "P + 8 digits"],
+  ];
+
+  const shouldNot: [string, string][] = [
+    ["A123", "too short"],
+    ["ABC1234567", "3 letters — exceeds pattern"],
+    ["123456789", "digits only"],
+    ["ABCDEFGH", "letters only"],
+    // Word boundary protection: digits followed immediately by letters produce no \b
+    // after the digit run, so the pattern cannot anchor. This is the key false positive
+    // guard for clinical strings like "AB123456extra" (lot numbers, specimen IDs).
+    ["AB123456extra", "digits run into letters — no word boundary after digit group"],
+    ["", "empty"],
+  ];
+
+  it.each(should)("matches '%s' (%s)", (input) => {
+    expect(matchOptIn("PASSPORT_NUMBER", input)).toBe(true);
+  });
+
+  it.each(shouldNot)("does not match '%s' (%s)", (input) => {
+    expect(matchOptIn("PASSPORT_NUMBER", input)).toBe(false);
   });
 });
 

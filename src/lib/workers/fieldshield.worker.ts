@@ -4,7 +4,28 @@
  * stores the canonical input value in memory unreachable by the main thread,
  * performs pattern detection, and returns masked output for display.
  *
- * @security
+ * @security NO NETWORK ACCESS — AUDITOR NOTICE
+ * This worker makes no network requests of any kind. It contains no calls to:
+ *   - `fetch()` or `XMLHttpRequest`
+ *   - `WebSocket` or `EventSource`
+ *   - `navigator.sendBeacon()`
+ *   - Any other network API
+ *
+ * Communication is exclusively via `postMessage` with the main thread that
+ * created this worker. The worker cannot initiate outbound connections.
+ * Auditors can verify this guarantee by inspecting this file directly —
+ * it has zero imports and zero network API calls. The entire file is
+ * self-contained and its behaviour is fully deterministic from its source.
+ *
+ * To enforce this guarantee at the infrastructure level, add the following
+ * Content Security Policy directive to your application:
+ *
+ *   `worker-src 'self'`
+ *
+ * This restricts workers to same-origin scripts, preventing any tampered
+ * or injected worker from loading external resources.
+ *
+ * @security ISOLATION GUARANTEE
  * The real input value (`internalTruth`) never leaves this worker unless
  * explicitly requested via a `GET_TRUTH` message with a private MessageChannel
  * port. It is intentionally excluded from all `UPDATE` responses sent to the
@@ -288,6 +309,10 @@ self.onmessage = (e: MessageEvent<FieldShieldMessage>): void => {
       const replyPort = e.ports[0];
       if (replyPort) {
         replyPort.postMessage({ text: internalTruth });
+        // port2 does not need explicit close here — the main thread closes port1
+        // after receiving the reply, at which point port2 has no live listener
+        // and will be garbage collected. One-shot usage: no further messages
+        // are expected on this channel after the single reply.
       } else {
         console.warn(
           "[FieldShield] GET_TRUTH received with no MessagePort — " +
