@@ -145,9 +145,8 @@ export default function App() {
               <div className="field-meta">
                 <span className="field-mode-badge">Standard</span>
                 <span className="field-hint">
-                  Try pasting&nbsp;
-                  <code className="inline-code">sk-abc123…</code>&nbsp;or an
-                  email
+                  Try typing&nbsp;
+                  <code className="inline-code">123-45-6789</code>
                 </span>
               </div>
               <FieldShieldInput
@@ -166,8 +165,9 @@ export default function App() {
                   Custom pattern
                 </span>
                 <span className="field-hint">
-                  Detects <code className="inline-code">EMP-XXXXXX</code>{" "}
-                  employee IDs
+                  Try pasting&nbsp;
+                  <code className="inline-code">sk-abc123…</code>&nbsp;or an
+                  email
                 </span>
               </div>
               <FieldShieldInput
