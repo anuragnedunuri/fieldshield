@@ -11,6 +11,33 @@ Pattern updates are **minor releases**, not patches. A new pattern could start f
 
 ---
 
+## [1.0.2] — 2026-04-07
+
+### Fixed
+
+- **Worker instantiation** (`useFieldShield.ts`) — replaced `new URL("../workers/fieldshield.worker.ts", import.meta.url)` with a blob URL via Vite's `?worker&inline` import. The previous approach referenced the TypeScript source file which does not exist in the published npm package, causing a runtime worker failure for all npm consumers. The worker is now compiled and inlined into `fieldshield.js` at build time; no separate worker file, no bundler configuration required.
+- **CSS cursor drift** (`fieldshield.css`) — added `letter-spacing: 0`, `word-spacing: 0`, and `font-weight: inherit` to `.fieldshield-mask-layer`, `.fieldshield-real-input`, and `.fieldshield-grow`. Without these, consumer stylesheets that set non-zero letter or word spacing on a parent element would cascade unevenly into both overlay layers, causing the cursor to appear offset from the displayed masked text.
+
+### Changed
+
+- **`CREDIT_CARD` pattern** — broadened Mastercard prefix from `5[1-5]` to `5\d` to cover all IIN ranges; added `6\d{3}` variant for Discover and UnionPay cards. Luhn validation is still recommended post-match in production.
+
+### Documentation
+
+- Updated **Framework compatibility** section — the worker is now bundled inline; no per-bundler configuration (worker-loader, publicPath) is needed for any framework.
+- Updated **CSP section** — `worker-src 'self' blob:` is now **required** (not optional). The `blob:` source is mandatory for the inlined worker to load.
+
+---
+
+## [1.0.1] — 2026-04-07
+
+### Fixed
+
+- Corrected repository URL, homepage, and bugs URL in `package.json` — links now point to the correct GitHub repository.
+- Updated `author` field in `package.json`.
+
+---
+
 ## [1.0.0] — 2026
 
 Initial public release.

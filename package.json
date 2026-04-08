@@ -1,6 +1,6 @@
 {
   "name": "fieldshield",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Sensitive input protection for React — prevents DOM scraping, clipboard exfiltration, and accidental PHI exposure in healthcare and fintech applications.",
   "type": "module",
   "license": "MIT",

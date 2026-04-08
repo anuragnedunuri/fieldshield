@@ -147,7 +147,7 @@ export const FIELDSHIELD_PATTERNS: Readonly<Record<string, string>> =
     // IBAN was moved to OPT_IN_PATTERNS — see that export for the rationale.
 
     /**
-     * Visa, Mastercard, and American Express — with optional space or hyphen
+     * Visa, Mastercard, Discover and American Express — with optional space or hyphen
      * separators between digit groups.
      *
      * Previous pattern required consecutive digits, missing the most common
@@ -155,7 +155,8 @@ export const FIELDSHIELD_PATTERNS: Readonly<Record<string, string>> =
      *
      * Matches:
      *   Visa 16-digit:   `4111111111111111` / `4111 1111 1111 1111` / `4111-1111-1111-1111`
-     *   Mastercard:      `5500005555555559` / `5500 0055 5555 5559`
+     *   Mastercard 16-digit:    `5500005555555559` / `5500 0055 5555 5559`
+     *   Discover 16-digit:    `6500005555555559` / `6500 0055 5555 5559`
      *   Amex 15-digit:   `378282246310005`  / `3782 822463 10005`
      *
      * Does not run a Luhn checksum — add post-match validation in production
@@ -163,7 +164,8 @@ export const FIELDSHIELD_PATTERNS: Readonly<Record<string, string>> =
      */
     CREDIT_CARD: [
       "\\b4\\d{3}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}\\b",
-      "\\b5[1-5]\\d{2}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}\\b",
+      "\\b5\\d{3}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}\\b",
+      "\\b6\\d{3}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}\\b",
       "\\b3[47]\\d{2}[-\\s]?\\d{6}[-\\s]?\\d{5}\\b",
     ].join("|"),
 

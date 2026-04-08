@@ -67,53 +67,15 @@ import "fieldshield/dist/assets/fieldshield.css";
 
 ## Framework compatibility
 
-FieldShield uses the `new URL('./fieldshield.worker.ts', import.meta.url)` pattern to instantiate its Web Worker. This is supported natively in Vite and in Webpack 5+ with no additional configuration.
+FieldShield's Web Worker is compiled and inlined into the bundle at build time. **No bundler configuration is required** — the worker loads via a blob URL embedded in `fieldshield.js`, so there is no separate worker file to serve or configure.
 
-### Vite
+### Vite, Webpack 5, Parcel, esbuild, Rollup
 
 Works out of the box. No configuration required.
 
-### Webpack 5
-
-Works out of the box with Webpack 5's built-in Web Worker support.
-
-### Webpack 4
-
-Requires `worker-loader`:
-
-```bash
-npm install --save-dev worker-loader
-```
-
-```js
-// webpack.config.js
-module.exports = {
-  module: {
-    rules: [
-      {
-        test: /\.worker\.ts$/,
-        use: { loader: "worker-loader" },
-      },
-    ],
-  },
-};
-```
-
 ### Next.js
 
-Next.js requires explicit worker configuration. Add the following to `next.config.js`:
-
-```js
-// next.config.js
-module.exports = {
-  webpack(config) {
-    config.output.publicPath = "/_next/";
-    return config;
-  },
-};
-```
-
-If you encounter issues with the worker URL resolution in Next.js, use the `NEXT_PUBLIC_` environment variable pattern to set the base URL explicitly, or open an issue — Next.js worker support is an active area of improvement.
+No webpack configuration needed. The blob URL approach works in Next.js without any changes to `next.config.js`.
 
 ### Server-Side Rendering (SSR)
 
@@ -828,11 +790,11 @@ FieldShield's worker isolation guarantee can be enforced at the infrastructure l
 
 ```
 Content-Security-Policy:
-  worker-src 'self';
+  worker-src 'self' blob:;
   script-src 'self';
 ```
 
-**`worker-src 'self' blob:`** — restricts Web Workers to same-origin scripts and blob URLs. The `blob:` source is required if you use the pre-compiled worker option (v1.1 roadmap). If you are certain you will only ever use the default source-file worker, `worker-src 'self'` without `blob:` is stricter.
+**`worker-src 'self' blob:`** — the `blob:` source is **required**. FieldShield's worker loads via a blob URL embedded in the bundle; without it the worker will be blocked by CSP and the field will fall back to `a11yMode`.
 
 **`script-src 'self'`** — restricts all script execution to same-origin. Combined with `worker-src`, this ensures neither the main thread nor the worker can load or execute scripts from external origins.
 

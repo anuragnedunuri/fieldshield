@@ -13,16 +13,6 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       // Do not copy the demo app's public/ assets into the library bundle
       publicDir: false,
-      // Worker bundles are compiled separately from the main lib bundle.
-      // entryFileNames removes the content-hash suffix so the filename is
-      // stable across builds — consumers can reference it predictably.
-      worker: {
-        rollupOptions: {
-          output: {
-            entryFileNames: "assets/[name].js",
-          },
-        },
-      },
       build: {
         lib: {
           // Entry point — exports everything consumers import from "fieldshield"

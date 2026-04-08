@@ -165,7 +165,10 @@
   color: var(--fieldshield-mask-color);
   font-family: var(--fieldshield-font-family);
   font-size: var(--fieldshield-font-size);
+  font-weight: inherit;
   line-height: var(--fieldshield-line-height);
+  letter-spacing: 0;
+  word-spacing: 0;
   white-space: pre-wrap;
   word-break: break-all;
   pointer-events: none;
@@ -224,7 +227,10 @@
   padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
   font-family: var(--fieldshield-font-family);
   font-size: var(--fieldshield-font-size);
+  font-weight: inherit;
   line-height: var(--fieldshield-line-height);
+  letter-spacing: 0;
+  word-spacing: 0;
   white-space: pre-wrap;
   word-break: break-all;
   pointer-events: none;
@@ -275,7 +281,10 @@
   padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
   font-family: var(--fieldshield-font-family);
   font-size: var(--fieldshield-font-size);
+  font-weight: inherit;
   line-height: var(--fieldshield-line-height);
+  letter-spacing: 0;
+  word-spacing: 0;
   color: transparent;
   caret-color: var(--fieldshield-caret-color);
   background: transparent;

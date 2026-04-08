@@ -15,6 +15,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FIELDSHIELD_PATTERNS } from "../patterns";
+import FieldShieldWorker from "../workers/fieldshield.worker.ts?worker&inline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,10 +244,7 @@ export const useFieldShield = (
     // On failure, workerFailed is set so FieldShieldInput can fall back to
     // a11yMode, keeping the field usable even without worker isolation.
     try {
-      workerRef.current = new Worker(
-        new URL("../workers/fieldshield.worker.ts", import.meta.url),
-        { type: "module" },
-      );
+      workerRef.current = new FieldShieldWorker();
     } catch (err) {
       console.error(
         "[FieldShield] Worker failed to initialize — falling back to a11yMode.",
