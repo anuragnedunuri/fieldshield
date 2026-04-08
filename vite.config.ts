@@ -13,6 +13,16 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       // Do not copy the demo app's public/ assets into the library bundle
       publicDir: false,
+      // Worker bundles are compiled separately from the main lib bundle.
+      // entryFileNames removes the content-hash suffix so the filename is
+      // stable across builds — consumers can reference it predictably.
+      worker: {
+        rollupOptions: {
+          output: {
+            entryFileNames: "assets/[name].js",
+          },
+        },
+      },
       build: {
         lib: {
           // Entry point — exports everything consumers import from "fieldshield"
@@ -31,10 +41,10 @@ export default defineConfig(({ mode }) => {
               "react-dom": "ReactDOM",
               "react/jsx-runtime": "ReactJSXRuntime",
             },
+            assetFileNames: "assets/[name][extname]",
+            chunkFileNames: "assets/[name].js",
           },
         },
-        // Generate source maps for production debugging
-        sourcemap: true,
         // Clean dist before each build
         emptyOutDir: true,
       },

@@ -30,7 +30,15 @@
     "data-protection"
   ],
   "files": [
-    "dist",
+    "dist/assets",
+    "dist/components",
+    "dist/hooks",
+    "dist/utils",
+    "dist/fieldshield.js",
+    "dist/fieldshield.umd.cjs",
+    "dist/index.d.ts",
+    "dist/index.d.cts",
+    "dist/patterns.d.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

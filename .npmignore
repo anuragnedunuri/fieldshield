@@ -1,0 +1,5 @@
+# Source maps expose full TypeScript source — never publish these
+dist/**/*.map
+
+# Worker declarations are empty (export {}) and provide no type information to consumers
+dist/workers/
