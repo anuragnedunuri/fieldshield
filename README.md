@@ -57,6 +57,12 @@ npm install fieldshield
 
 FieldShield requires React 18 or later.
 
+Import the stylesheet once in your application entry point — FieldShield's component styles will not apply without it:
+
+```ts
+import "fieldshield/dist/assets/fieldshield.css";
+```
+
 ---
 
 ## Framework compatibility
@@ -143,6 +149,7 @@ A migration to React 19's ref-as-prop pattern is planned for v1.1.
 import { useRef } from "react";
 import { FieldShieldInput } from "fieldshield";
 import type { FieldShieldHandle } from "fieldshield";
+import "fieldshield/dist/assets/fieldshield.css";
 
 export function PatientForm() {
   const ssnRef = useRef<FieldShieldHandle>(null);
