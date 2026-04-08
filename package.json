@@ -4,14 +4,14 @@
   "description": "Sensitive input protection for React — prevents DOM scraping, clipboard exfiltration, and accidental PHI exposure in healthcare and fintech applications.",
   "type": "module",
   "license": "MIT",
-  "author": "Anurag <your-email@example.com>",
-  "homepage": "https://github.com/YOUR_USERNAME/fieldshield#readme",
+  "author": "Anurag Nedunuri",
+  "homepage": "https://github.com/anuragnedunuri/fieldshield#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_USERNAME/fieldshield.git"
+    "url": "git+https://github.com/anuragnedunuri/fieldshield.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/fieldshield/issues"
+    "url": "https://github.com/anuragnedunuri/fieldshield/issues"
   },
   "keywords": [
     "react",
