@@ -8,7 +8,7 @@
   "homepage": "https://github.com/YOUR_USERNAME/fieldshield#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/fieldshield.git"
+    "url": "git+https://github.com/YOUR_USERNAME/fieldshield.git"
   },
   "bugs": {
     "url": "https://github.com/YOUR_USERNAME/fieldshield/issues"
