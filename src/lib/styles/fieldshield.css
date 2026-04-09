@@ -354,6 +354,10 @@
   color: var(--fieldshield-placeholder-color);
 }
 
+.fieldshield-real-input::placeholder {
+  color: transparent;
+}
+
 /* ─── 6. Findings / Warning Region ─────────────────────────────────────────
  *
  * The findings region is a `role="status"` aria-live region. It is always

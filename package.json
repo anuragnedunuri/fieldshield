@@ -1,6 +1,6 @@
 {
   "name": "fieldshield",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Sensitive input protection for React — prevents DOM scraping, clipboard exfiltration, and accidental PHI exposure in healthcare and fintech applications.",
   "type": "module",
   "license": "MIT",
@@ -38,6 +38,7 @@
     "dist/fieldshield.umd.cjs",
     "dist/index.d.ts",
     "dist/index.d.cts",
+    "dist/style.d.ts",
     "dist/patterns.d.ts",
     "README.md",
     "CHANGELOG.md",
@@ -57,9 +58,16 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/fieldshield.umd.cjs"
       }
-    }
+    },
+    "./style": {
+      "types": "./dist/style.d.ts",
+      "default": "./dist/assets/fieldshield.css"
+    },
+    "./dist/assets/fieldshield.css": "./dist/assets/fieldshield.css"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/assets/fieldshield.css"
+  ],
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
@@ -72,7 +80,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:lib": "vite build --mode lib && tsc -p tsconfig.lib.json && node -e \"require('fs').copyFileSync('dist/index.d.ts','dist/index.d.cts')\"",
+    "build:lib": "vite build --mode lib && tsc -p tsconfig.lib.json && node -e \"require('fs').copyFileSync('dist/index.d.ts','dist/index.d.cts')\" && node -e \"require('fs').writeFileSync('dist/style.d.ts','// Side-effect import — no exports.\\ndeclare const _: undefined;\\nexport default _;\\n')\"",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",

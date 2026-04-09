@@ -11,6 +11,15 @@ Pattern updates are **minor releases**, not patches. A new pattern could start f
 
 ---
 
+## [1.1.2] — 2026-04-09
+
+### Fixed
+
+- **Placeholder blur** (`fieldshield.css`) — added `.fieldshield-real-input::placeholder { color: transparent }`. After the v1.1.1 monospace fix, the native `::placeholder` was rendering in monospace on top of the mask layer's `<span class="fieldshield-placeholder">` which renders in the consumer's font, causing a visible blur/ghost effect on empty fields. Suppressing the native placeholder makes the mask layer span the sole visible placeholder in standard mode. `a11yMode` is unaffected — its separate `.fieldshield-a11y-input::placeholder` rule is unchanged.
+- **CSS import path** (`package.json`) — added `"./style"` to the `exports` map so consumers can import the stylesheet as `import "fieldshield/style"` instead of having to use the full internal path `../node_modules/fieldshield/dist/assets/fieldshield.css`. The full path `"./dist/assets/fieldshield.css"` remains in exports for backwards compatibility. Added `dist/style.d.ts` type stub so TypeScript resolves the import without errors. Updated `sideEffects` from `false` to `["./dist/assets/fieldshield.css"]` so bundlers do not tree-shake the CSS import.
+
+---
+
 ## [1.1.1] — 2026-04-09
 
 ### Fixed

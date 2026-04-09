@@ -60,7 +60,7 @@ FieldShield requires React 18 or later.
 Import the stylesheet once in your application entry point — FieldShield's component styles will not apply without it:
 
 ```ts
-import "fieldshield/dist/assets/fieldshield.css";
+import "fieldshield/style";
 ```
 
 ---
