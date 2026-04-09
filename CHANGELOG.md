@@ -11,6 +11,21 @@ Pattern updates are **minor releases**, not patches. A new pattern could start f
 
 ---
 
+## [1.1.1] — 2026-04-09
+
+### Fixed
+
+- **Cursor drift in proportional font environments** — `.fieldshield-real-input` now enforces a monospace font stack (`ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace`) with `!important`, overriding any consumer font. The real input is always `color: transparent` and sits behind the mask layer — the consumer never sees it, only the cursor. Forcing monospace ensures the cursor advances in uniform steps regardless of the consumer's proportional font (Inter, Roboto, Arial, etc.).
+- **Root cause** — the demo app used IBM Plex Mono (`--fieldshield-font-family: var(--font-mono)`) which masked the bug during development. In consumer apps with proportional fonts the cursor position drifted because `font-family: inherit` caused the real input to pick up the consumer's font where character advances are not uniform.
+- `.fieldshield-a11y-input` is unaffected — the password input retains `font-family: inherit` so the consumer's font renders correctly for the dot/bullet masking the browser applies natively.
+
+### Notes
+
+- The mask layer (what users actually see) still inherits the consumer's font — visual output is unchanged.
+- No consumer-side changes required.
+
+---
+
 ## [1.1.0] — 2026-04-08
 
 ### Fixed

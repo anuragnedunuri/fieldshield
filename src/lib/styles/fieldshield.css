@@ -128,9 +128,13 @@
  *   1. fieldshield-mask-layer  — visible masked text, aria-hidden
  *   2. fieldshield-real-input  — transparent, receives all events
  *
- * Both layers must share identical font metrics and padding so character
- * positions align pixel-perfectly. Any font or padding mismatch will cause
- * the cursor to appear offset from the displayed text.
+ * Font strategy: the two layers intentionally use different fonts.
+ *   - fieldshield-mask-layer uses the consumer's font (via inherit) so the
+ *     visible masked text matches the surrounding design system exactly.
+ *   - fieldshield-real-input uses a monospace font stack (see section 4) so
+ *     the cursor moves in uniform steps regardless of the consumer's font.
+ *     The real input is always color:transparent — the consumer never sees it.
+ * Both layers share identical padding, font-size, and line-height.
  * ────────────────────────────────────────────────────────────────────────── */
 
 .fieldshield-field-wrapper {
@@ -279,7 +283,11 @@
   width: 100%;
   height: 100%;
   padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
-  font-family: var(--fieldshield-font-family);
+  /* Force monospace so the cursor advances in uniform steps regardless of
+   * what proportional font the consumer's app uses. The real input is always
+   * color:transparent — the user never sees the font, only the cursor. */
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro",
+    Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
   font-size: var(--fieldshield-font-size);
   font-weight: inherit;
   line-height: var(--fieldshield-line-height);
