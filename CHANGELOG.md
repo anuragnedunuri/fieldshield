@@ -11,7 +11,7 @@ Pattern updates are **minor releases**, not patches. A new pattern could start f
 
 ---
 
-## [1.0.2] — 2026-04-07
+## [1.1.0] — 2026-04-08
 
 ### Fixed
 
