@@ -618,3 +618,121 @@ test.describe("Worker initialization fallback", () => {
     expect(await maskLayers.count()).toBe(0);
   });
 });
+
+// ─── 11. CSS inheritance lockdown ─────────────────────────────────────────────
+//
+// These tests verify that consumer styles inherited from parent elements cannot
+// override the layout-critical properties on .fieldshield-mask-layer and
+// .fieldshield-real-input. Each test injects a conflicting consumer stylesheet
+// via page.addStyleTag() then reads getComputedStyle() on the mask layer to
+// confirm the lockdown value holds.
+//
+// Note: getComputedStyle() returns computed (used) values. In a LTR document,
+// `text-align: start` computes to `left` in Chromium. We assert the correct
+// computed value rather than the authored keyword.
+
+test.describe("CSS inheritance lockdown", () => {
+  // Each test injects a conflicting consumer stylesheet via addStyleTag (no
+  // !important — the lockdown must win via specificity, not important wars).
+  // getComputedStyle() returns used values: `text-align: start` computes to
+  // "left" in Chromium LTR documents, so we assert "not center/right/etc."
+  // rather than the authored keyword.
+
+  test("text-align: center on body does not centre mask layer text", async ({
+    page,
+  }) => {
+    await page.addStyleTag({ content: "body { text-align: center; }" });
+
+    const textAlign = await page.evaluate(() => {
+      const el = document.querySelector(".fieldshield-mask-layer");
+      return el ? window.getComputedStyle(el).textAlign : null;
+    });
+
+    expect(textAlign).not.toBe("center");
+  });
+
+  test("text-indent on parent does not indent mask layer first line", async ({
+    page,
+  }) => {
+    await page.addStyleTag({
+      content: ".fieldshield-container { text-indent: 40px; }",
+    });
+
+    const textIndent = await page.evaluate(() => {
+      const el = document.querySelector(".fieldshield-mask-layer");
+      return el ? window.getComputedStyle(el).textIndent : null;
+    });
+
+    expect(textIndent).toBe("0px");
+  });
+
+  test("text-transform: uppercase on parent does not transform mask layer", async ({
+    page,
+  }) => {
+    await page.addStyleTag({
+      content: ".fieldshield-container { text-transform: uppercase; }",
+    });
+
+    const textTransform = await page.evaluate(() => {
+      const el = document.querySelector(".fieldshield-mask-layer");
+      return el ? window.getComputedStyle(el).textTransform : null;
+    });
+
+    expect(textTransform).toBe("none");
+  });
+
+  test("font-variant-ligatures on parent does not enable ligatures in mask layer", async ({
+    page,
+  }) => {
+    await page.addStyleTag({
+      content:
+        ".fieldshield-container { font-variant-ligatures: common-ligatures; }",
+    });
+
+    const ligatures = await page.evaluate(() => {
+      const el = document.querySelector(".fieldshield-mask-layer");
+      return el ? window.getComputedStyle(el).fontVariantLigatures : null;
+    });
+
+    expect(ligatures).toBe("none");
+  });
+
+  test("font-kerning: auto on parent does not enable kerning in mask layer", async ({
+    page,
+  }) => {
+    await page.addStyleTag({
+      content: ".fieldshield-container { font-kerning: auto; }",
+    });
+
+    const kerning = await page.evaluate(() => {
+      const el = document.querySelector(".fieldshield-mask-layer");
+      return el ? window.getComputedStyle(el).fontKerning : null;
+    });
+
+    expect(kerning).toBe("none");
+  });
+
+  test("textarea wrapper has data-type=textarea attribute", async ({ page }) => {
+    // The Clinical Notes field in the demo app uses type="textarea"
+    const count = await page
+      .locator(".fieldshield-field-wrapper[data-type='textarea']")
+      .count();
+    expect(count).toBeGreaterThan(0);
+  });
+
+  test("single-line input wrapper has no data-type attribute", async ({
+    page,
+  }) => {
+    const allWrappers = page.locator(".fieldshield-field-wrapper");
+    const total = await allWrappers.count();
+    let foundWithoutDataType = false;
+    for (let i = 0; i < total; i++) {
+      const dt = await allWrappers.nth(i).getAttribute("data-type");
+      if (dt === null) {
+        foundWithoutDataType = true;
+        break;
+      }
+    }
+    expect(foundWithoutDataType).toBe(true);
+  });
+});

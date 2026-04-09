@@ -883,6 +883,35 @@ FieldShieldInput does not accept a `name` prop and does not support native HTML 
 
 Always use `getSecureValue()` or `collectSecureValues()` on submit — never rely on the DOM value.
 
+### CSS inheritance and customisation
+
+FieldShield locks several CSS properties on its internal layers (`.fieldshield-mask-layer`, `.fieldshield-real-input`, `.fieldshield-grow`) to prevent consumer styles from silently breaking cursor alignment:
+
+| Locked property | Why |
+|---|---|
+| `text-align: start` | `text-align: center` or `right` on a parent shifts visible text but not the cursor position, creating misalignment |
+| `text-indent: 0` | A parent `text-indent` pushes the first line of text away from where the cursor starts |
+| `text-transform: none` | `uppercase`/`lowercase` changes character advance widths in the proportional mask-layer font while the cursor tracks in monospace |
+| `font-variant-ligatures: none` | `fi`/`fl` ligatures collapse two characters into one wider glyph in the mask layer, shifting the cursor away from the displayed text |
+| `font-kerning: none` | Kern pairs shift character advance widths in proportional fonts, adding cumulative cursor drift |
+| `hyphens: none` | Auto-hyphenation inserts break points in the mask layer that the real input does not apply |
+
+**What this means in practice:** setting any of these properties on a parent element will not cascade into FieldShield fields. If you intentionally want to override one of these values — for example, to right-align a currency field — target the FieldShield class directly:
+
+```css
+/* ✅ works — direct class targeting */
+.my-form .fieldshield-mask-layer {
+  text-align: right;
+}
+
+/* ❌ does not cascade in — blocked by the lockdown */
+.my-form {
+  text-align: right;
+}
+```
+
+Re-enabling `font-variant-ligatures` or `font-kerning` on `.fieldshield-mask-layer` will reintroduce cursor drift because those properties affect character advance widths in the proportional mask font but not in the monospace real input.
+
 ### No `id` prop override
 
 FieldShieldInput generates its own stable `id` via React's `useId()` hook to prevent collisions when multiple instances share a page. You cannot set a custom `id` on the underlying input element. If you need to target the input externally (e.g. for testing selectors), use `aria-label` or the container's `className` prop instead.

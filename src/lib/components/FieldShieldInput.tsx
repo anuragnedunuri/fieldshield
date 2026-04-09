@@ -1055,7 +1055,10 @@ export const FieldShieldInput = forwardRef<
           detected and blocked from copying.
         </span>
 
-        <div className="fieldshield-field-wrapper">
+        <div
+          className="fieldshield-field-wrapper"
+          data-type={type === "textarea" ? "textarea" : undefined}
+        >
           {/*
            * Visual overlay — aria-hidden so screen readers skip entirely.
            * Renders `masked` from the worker — sensitive spans already replaced

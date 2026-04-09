@@ -171,6 +171,20 @@
   font-size: var(--fieldshield-font-size);
   font-weight: inherit;
   line-height: var(--fieldshield-line-height);
+  /* ── Inherited-property lockdown ─────────────────────────────────────────
+   * The mask layer and real input must agree on text geometry for the cursor
+   * to stay aligned with the visible masked text. Any inherited CSS property
+   * that shifts character positions in one layer but not the other causes
+   * visible cursor drift. These resets block consumer styles from cascading
+   * in and silently breaking layout — consumers must target .fieldshield-*
+   * classes directly if they need to override these values intentionally.
+   * ──────────────────────────────────────────────────────────────────────── */
+  text-align: start;            /* consumer text-align:center/right shifts text but not cursor */
+  text-indent: 0;               /* first-line indent shifts text away from cursor start */
+  text-transform: none;         /* uppercase/lowercase changes advance widths in proportional font */
+  font-variant-ligatures: none; /* fi/fl ligatures collapse two chars to one wider glyph → cursor drift */
+  font-kerning: none;           /* kern pairs shift advance widths in proportional font → cursor drift */
+  hyphens: none;                /* auto-hyphenation inserts breaks at different points than real input */
   letter-spacing: 0;
   word-spacing: 0;
   white-space: pre-wrap;
@@ -181,9 +195,8 @@
 }
 
 /** Textarea mask layer — override flex centering so text flows from the top. */
-.fieldshield-field-wrapper:has(textarea) .fieldshield-mask-layer {
+.fieldshield-field-wrapper[data-type="textarea"] .fieldshield-mask-layer {
   display: block;
-  align-items: normal;
 }
 
 /** █ block characters rendered in the unsafe accent color for visual clarity. */
@@ -222,8 +235,11 @@
 .fieldshield-grow {
   /* Normal flow — this div's height determines the wrapper height.
    * The absolute-positioned mask layer and textarea will fill that height.
-   * Must share identical font metrics and padding with the textarea so
-   * the heights match exactly. */
+   * Must share identical font metrics and padding with the mask layer so
+   * the heights match exactly. The same lockdown properties applied to
+   * .fieldshield-mask-layer must be mirrored here — any difference in text
+   * rendering between the two divs would cause a height mismatch and make
+   * the wrapper the wrong size. */
   visibility: hidden;
   display: block;
   width: 100%;
@@ -233,6 +249,12 @@
   font-size: var(--fieldshield-font-size);
   font-weight: inherit;
   line-height: var(--fieldshield-line-height);
+  text-align: start;
+  text-indent: 0;
+  text-transform: none;
+  font-variant-ligatures: none;
+  font-kerning: none;
+  hyphens: none;
   letter-spacing: 0;
   word-spacing: 0;
   white-space: pre-wrap;
@@ -262,9 +284,25 @@
  * ghost that holds space; the visible layers sit on top of it.
  * ────────────────────────────────────────────────────────────────────────── */
 
-/** Wrapper in textarea mode — overflow visible so grow div can set height. */
-.fieldshield-field-wrapper:has(textarea) {
+/**
+ * Wrapper in textarea mode — overflow visible so grow div can set height.
+ * min-height is overridden to two text rows so the top-aligned placeholder
+ * is clearly distinct from the vertically-centred single-line input mode.
+ */
+.fieldshield-field-wrapper[data-type="textarea"] {
   overflow: visible;
+  min-height: calc(
+    2 * var(--fieldshield-line-height) * var(--fieldshield-font-size) +
+      2 * var(--fieldshield-padding-y)
+  );
+}
+
+/** Grow div in textarea mode — min-height matches the wrapper. */
+.fieldshield-field-wrapper[data-type="textarea"] .fieldshield-grow {
+  min-height: calc(
+    2 * var(--fieldshield-line-height) * var(--fieldshield-font-size) +
+      2 * var(--fieldshield-padding-y)
+  );
 }
 
 /* ─── 4. Real Input (DOM-scrambling mode) ───────────────────────────────────
@@ -291,6 +329,8 @@
   font-size: var(--fieldshield-font-size);
   font-weight: inherit;
   line-height: var(--fieldshield-line-height);
+  text-align: start;  /* cursor must start from the same edge as the mask layer text */
+  text-indent: 0;     /* first-line indent would offset cursor from mask layer text */
   letter-spacing: 0;
   word-spacing: 0;
   color: transparent;

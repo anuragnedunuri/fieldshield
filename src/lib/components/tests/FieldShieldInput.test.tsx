@@ -258,6 +258,18 @@ describe("FieldShieldInput — type=textarea", () => {
     render(<FieldShieldInput label="Notes" type="textarea" />);
     expect(screen.getByRole("textbox")).toHaveAttribute("rows", "3");
   });
+
+  it('field wrapper has data-type="textarea" in textarea mode', () => {
+    render(<FieldShieldInput label="Notes" type="textarea" />);
+    const wrapper = document.querySelector(".fieldshield-field-wrapper");
+    expect(wrapper).toHaveAttribute("data-type", "textarea");
+  });
+
+  it("field wrapper has no data-type attribute in default text mode", () => {
+    render(<FieldShieldInput label="Notes" />);
+    const wrapper = document.querySelector(".fieldshield-field-wrapper");
+    expect(wrapper).not.toHaveAttribute("data-type");
+  });
 });
 
 // ─── Props: a11yMode ──────────────────────────────────────────────────────────
