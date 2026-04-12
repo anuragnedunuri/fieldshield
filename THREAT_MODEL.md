@@ -262,6 +262,27 @@ Input Method Editors (CJK input, voice-to-text via browser) may not be correctly
 
 ---
 
+## Expanded Threat Landscape (April 2026)
+
+### AI Screen-Reading Assistants
+
+Microsoft Copilot Vision and Google Gemini Live are now globally available and can analyze browser content in real time. Microsoft explicitly states Copilot Vision "sees the page you're on and reads along with you." A user seeking help navigating a sensitive form inadvertently exposes all visible input values to the AI assistant's cloud inference pipeline. FieldShield's DOM isolation ensures `input.value` always contains scrambled characters — AI screen readers cannot read the real value regardless of their access level.
+
+**References:**
+- Microsoft Copilot Vision documentation: https://support.microsoft.com/en-us/topic/using-copilot-vision-with-microsoft-copilot-3c67686f-fa97-40f6-8a3e-0e45265d425f
+
+---
+
+### Browser Extensions with DOM Access
+
+Research published by LayerX and covered by The Hacker News (April 2026) found that 99% of enterprises run at least one browser extension, and AI extensions are nearly 6x more likely to change their permissions over time. Any extension with scripting access to the DOM can read `input.value` directly. Vendor-specific opt-out attributes (`fs-exclude`, `data-private`) have no effect on extension-based access.
+
+**References:**
+- The Hacker News — Browser Extensions Are the New AI Consumption Channel (April 2026): https://thehackernews.com/2026/04/browser-extensions-are-new-ai.html
+- LayerX Extension Security Report (2026)
+
+---
+
 ## Environment assumptions
 
 FieldShield's security properties depend on the following environment assumptions being true. If any assumption is violated, the protections described in [Threats mitigated](#threats-mitigated) may not hold.
@@ -346,6 +367,10 @@ A `cancelled` boolean in the worker lifecycle effect prevents state updates from
 | Logical access controls           | SOC 2 CC6.1        | `getSecureValue()` is the only retrieval path — no DOM access to sensitive values                 |
 | Availability                      | SOC 2 A1           | `maxProcessLength` prevents DoS; worker init fallback keeps field usable if worker unavailable    |
 | Change management                 | SOC 2 CC8.1        | All patterns versioned in `patterns.ts` — changes are tracked in git history and CHANGELOG        |
+
+---
+
+> **Note:** Threat model updated April 2026 to include AI screen-reading assistants and browser extensions as documented threat actors following industry research validation.
 
 ---
 

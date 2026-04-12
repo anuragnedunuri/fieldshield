@@ -11,29 +11,43 @@ Pattern updates are **minor releases**, not patches. A new pattern could start f
 
 ---
 
-## [1.1.3] — 2026-04-09
+## [1.1.3] — 2026-04-11
 
 ### Fixed
 
-- **CSS inheritance lockdown** (`fieldshield.css`) — six inheritable CSS properties are now explicitly reset on `.fieldshield-mask-layer` and `.fieldshield-grow` to prevent consumer parent styles from silently breaking cursor/text alignment:
-  - `text-align: start` — consumer `text-align: center` or `right` shifts mask text but not the cursor, causing visible misalignment
-  - `text-indent: 0` — first-line indent offsets mask text from cursor start position
-  - `text-transform: none` — `uppercase`/`lowercase` changes glyph advance widths in proportional fonts, drifting cursor relative to visible characters
-  - `font-variant-ligatures: none` — `fi`/`fl` ligatures collapse two characters into one wider glyph, shifting cursor position beyond the ligature
-  - `font-kerning: none` — kern pairs adjust advance widths between specific character pairs, accumulating cursor drift over long values
-  - `hyphens: none` — `hyphens: auto` inserts soft breaks at different points than the hidden real input, desynchronising line wrapping
-- **`text-align` and `text-indent` reset on `.fieldshield-real-input`** — the cursor must originate from the same edge as the mask layer text; mismatched alignment offsets the cursor horizontally on every character.
-- **Textarea selector reliability** (`fieldshield.css`, `FieldShieldInput.tsx`) — replaced CSS `:has(textarea)` pseudo-class selectors with `[data-type="textarea"]` attribute selectors. The component now sets `data-type="textarea"` on the field wrapper div in textarea mode. `:has(textarea)` is valid in Chrome 105+ but can fail in consumer app contexts due to CSS import order or specificity issues; an explicit attribute is fully under component control.
-- **Textarea minimum height** — the wrapper and grow div now enforce a minimum height of 2 text rows (`2 × line-height × font-size + 2 × padding-y`) so an empty textarea always displays as a textarea rather than collapsing to a single line.
+- CSS inheritance lockdown — six inheritable CSS properties
+  now explicitly reset on .fieldshield-mask-layer and
+  .fieldshield-grow so consumer parent styles cannot break
+  cursor/text alignment:
+  - text-align: shifts visible text but not cursor
+  - text-indent: offsets first line away from cursor start
+  - text-transform: changes glyph widths causing cursor drift
+  - font-variant-ligatures: collapses 2 chars to 1 wider glyph
+  - font-kerning: kern pairs shift advance widths cumulatively
+  - hyphens: auto-breaks lines at different points than real input
+- text-align and text-indent also reset on .fieldshield-real-input
+  so cursor originates from same edge as visible text
+- Replaced :has(textarea) CSS selector with [data-type="textarea"]
+  attribute selector — more reliable across consumer app contexts
+  where CSS import order or specificity can affect :has() behavior
+- Empty textarea now enforces minimum 2-row height instead of
+  collapsing to single-line height
 
 ### Tests
 
-- Added 2 Vitest unit tests: `data-type="textarea"` attribute present in textarea mode; no `data-type` attribute in default text mode.
-- Added 7 Playwright E2E tests in a new `"CSS inheritance lockdown"` describe block: `text-align: center`, `text-indent`, `text-transform`, `font-variant-ligatures`, and `font-kerning` consumer styles are all overridden by the lockdown; `[data-type="textarea"]` wrapper present for textarea fields; single-line wrapper has no `data-type` attribute.
+- 2 new Vitest unit tests — data-type attribute present/absent
+  in textarea vs text mode
+- 7 new Playwright E2E tests — each of the 5 locked CSS properties
+  verified to not cascade in, plus textarea data-type checks
+- Total: 454 unit + 45 E2E tests, all passing
 
-### Documentation
+### Notes
 
-- Added **"CSS inheritance and customisation"** section to `README.md` Known limitations. Lists all 6 locked properties with explanations, shows correct (direct class targeting) vs incorrect (relying on inheritance) consumer CSS patterns.
+- Root cause: standard Vite template has #root { text-align: center }
+  which cascaded into mask layer. Demo app never exposed this because
+  it sets no text-align on parent elements.
+- This is a novel finding — documents CSS containment gap beyond
+  scoped selectors for overlay-based security components.
 
 ---
 

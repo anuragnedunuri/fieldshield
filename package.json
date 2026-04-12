@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "author": "Anurag Nedunuri",
-  "homepage": "https://github.com/anuragnedunuri/fieldshield#readme",
+  "homepage": "https://fieldshield-demo.vercel.app",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/anuragnedunuri/fieldshield.git"
@@ -111,5 +111,9 @@
     "vite": "^7.3.1",
     "vitest": "^4.0.18",
     "vitest-axe": "^0.1.0"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0"
   }
 }
