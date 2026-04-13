@@ -454,6 +454,17 @@ export const FieldShieldInput = forwardRef<
     const growRef = useRef<HTMLDivElement>(null);
 
     /**
+     * Ref for the visible mask layer div. Used by the scroll-sync effect to
+     * apply a `transform: translate(...)` that mirrors the real input's
+     * horizontal (and vertical, for textarea) scroll offset. Without this,
+     * long values cause the real input to auto-scroll its content left to
+     * keep the caret in frame, while the mask layer — which has
+     * `overflow: hidden` and cannot scroll — stays put, leaving the caret
+     * visually on top of the wrong character.
+     */
+    const maskLayerRef = useRef<HTMLDivElement>(null);
+
+    /**
      * Holds the canonical real input value on the main thread.
      *
      * **Why a ref, not state?**
@@ -532,6 +543,55 @@ export const FieldShieldInput = forwardRef<
     useEffect(() => {
       onChange?.(masked, findings);
     }, [masked, findings, onChange]);
+
+    // ── Scroll sync ─────────────────────────────────────────────────────────
+
+    /**
+     * Keeps the mask layer horizontally (and vertically for textarea) aligned
+     * with the real input's scroll position.
+     *
+     * Native `<input>` and `<textarea>` elements auto-scroll their content to
+     * keep the caret in frame when the typed value exceeds the visible size.
+     * The mask layer is a `<div>` with `overflow: hidden` and cannot scroll.
+     * Without this sync, once the real input scrolls, the caret at character N
+     * ends up over mask character (N − scrolledChars), causing visible drift
+     * that grows unboundedly with the string length.
+     *
+     * The sync reads `scrollLeft` / `scrollTop` from the real input and writes
+     * an inverse `translate()` to the mask layer. The `scroll` event fires for
+     * both user-initiated and browser-initiated scrolls (caret auto-scroll on
+     * setSelectionRange, focus, End key), covering all cases.
+     */
+    useEffect(() => {
+      if (effectiveA11yMode) return;
+      const el = inputRef.current ?? textareaRef.current;
+      const mask = maskLayerRef.current;
+      if (!el || !mask) return;
+      const sync = () => {
+        mask.style.transform = `translate(${-el.scrollLeft}px, ${-el.scrollTop}px)`;
+      };
+      el.addEventListener("scroll", sync);
+      sync();
+      return () => {
+        el.removeEventListener("scroll", sync);
+      };
+    }, [effectiveA11yMode]);
+
+    /**
+     * Re-sync after every masked update. Programmatic value mutations in
+     * `commitRealValue` (input.value = ..., setSelectionRange) can change
+     * `scrollLeft` without firing a `scroll` event in every browser, so the
+     * above listener alone is not sufficient for the React-driven update path.
+     * This effect runs on every committed render where `masked` changed and
+     * writes the current scroll offset to the mask layer transform.
+     */
+    useEffect(() => {
+      if (effectiveA11yMode) return;
+      const el = inputRef.current ?? textareaRef.current;
+      const mask = maskLayerRef.current;
+      if (!el || !mask) return;
+      mask.style.transform = `translate(${-el.scrollLeft}px, ${-el.scrollTop}px)`;
+    }, [masked, effectiveA11yMode]);
 
     // ── Event handlers ──────────────────────────────────────────────────────
 
@@ -1067,6 +1127,7 @@ export const FieldShieldInput = forwardRef<
            * content is detected.
            */}
           <div
+            ref={maskLayerRef}
             className={`fieldshield-mask-layer${isUnsafe ? " fieldshield-mask-unsafe" : ""}`}
             aria-hidden="true"
           >

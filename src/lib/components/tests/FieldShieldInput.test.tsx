@@ -860,3 +860,55 @@ describe("FieldShieldInput — className and style props", () => {
     });
   });
 });
+
+// ─── Mask layer font consistency ──────────────────────────────────────────────
+//
+// Regression tests for v1.1.4. The cursor drift fix depends on two invariants:
+// (1) both the mask layer and the real input exist in the DOM at the same time
+// and (2) the mask layer is marked aria-hidden so screen readers skip it — this
+// matters especially now that the mask layer renders in a fixed monospace font
+// that may differ from the surrounding page font.
+//
+// These tests exercise the prerequisites for the font-based alignment. Visual
+// alignment itself cannot be asserted here because jsdom does not compute
+// layout or font metrics — those assertions live in the Playwright suite.
+describe("FieldShieldInput — mask layer font consistency", () => {
+  it("mask layer has fieldshield-mask-layer class", () => {
+    render(<FieldShieldInput label="Test" />);
+    expect(document.querySelector(".fieldshield-mask-layer")).not.toBeNull();
+  });
+
+  it("real input has fieldshield-real-input class", () => {
+    render(<FieldShieldInput label="Test" />);
+    expect(document.querySelector(".fieldshield-real-input")).not.toBeNull();
+  });
+
+  it("both layers are present simultaneously", () => {
+    // Overlay architecture invariant — the mask layer and real input must
+    // coexist for font-based alignment to have anything to align.
+    render(<FieldShieldInput label="Test" />);
+    const mask = document.querySelector(".fieldshield-mask-layer");
+    const real = document.querySelector(".fieldshield-real-input");
+    expect(mask).not.toBeNull();
+    expect(real).not.toBeNull();
+  });
+
+  it("mask layer is aria-hidden", () => {
+    // Screen readers must skip the mask layer. In monospace mode the mask
+    // text may not match the surrounding page font, and announcing it to
+    // assistive tech would duplicate what the real input's aria-label
+    // already provides.
+    render(<FieldShieldInput label="Test" />);
+    const mask = document.querySelector(".fieldshield-mask-layer");
+    expect(mask).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("real input carries the fieldshield-real-input class only", () => {
+    // Architecture invariant: the real input is always the element the
+    // fieldshield-real-input CSS targets. The forced monospace + transparent
+    // color rules depend on this class being present.
+    render(<FieldShieldInput label="Test" />);
+    const real = document.querySelector(".fieldshield-real-input");
+    expect(real?.className).toContain("fieldshield-real-input");
+  });
+});

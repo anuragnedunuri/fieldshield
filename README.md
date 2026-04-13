@@ -101,7 +101,7 @@ Some browser extensions inject content into form fields and may conflict with Fi
 
 FieldShield works with React 19 without any configuration. The library uses
 `forwardRef` internally which is deprecated but fully functional in React 19.
-A migration to React 19's ref-as-prop pattern is planned for v1.1.
+A migration to React 19's ref-as-prop pattern is under consideration for v2.
 
 ---
 
@@ -111,7 +111,7 @@ A migration to React 19's ref-as-prop pattern is planned for v1.1.
 import { useRef } from "react";
 import { FieldShieldInput } from "fieldshield";
 import type { FieldShieldHandle } from "fieldshield";
-import "fieldshield/dist/assets/fieldshield.css";
+import "fieldshield/style";
 
 export function PatientForm() {
   const ssnRef = useRef<FieldShieldHandle>(null);
@@ -843,6 +843,10 @@ Paste events are intercepted before the browser inserts clipboard content. The p
 
 The `PURGE` message zeros `internalTruth` in worker memory and posts a `PURGED` confirmation. This provides demonstrable evidence of data disposal for HIPAA and PCI-DSS compliance audits.
 
+### Upgrading within the 1.x line
+
+Upgrading within the 1.x line is safe for security review. Every release from v1.1.0 through v1.1.4 has been a CSS or UX refinement — the Web Worker isolation, DOM scrambling, `MessageChannel`-based `GET_TRUTH` delivery, clipboard interception, paste pre-scan, and pattern detection contracts are identical to v1.0.0. Consumers who reviewed FieldShield's threat model at v1.0 adoption do not need to re-review their security assumptions for any 1.1.x upgrade. The architectural pillars listed above are the contract the library makes with the threat model — none of them have changed since the initial release.
+
 ---
 
 ## Known limitations
@@ -863,7 +867,7 @@ FieldShield does not zero `realValueRef` on blur. The async `getSecureValue()` c
 
 ### IME composition (CJK input)
 
-Composed input via Input Method Editors (Chinese, Japanese, Korean) is not supported in v1. Characters entered via IME may not be reconstructed correctly in `realValueRef`. Planned for v1.1.
+Composed input via Input Method Editors (Chinese, Japanese, Korean) is not supported in v1. Characters entered via IME may not be reconstructed correctly in `realValueRef`. Deferred to a future release.
 
 ### Voice dictation
 
@@ -883,18 +887,33 @@ FieldShieldInput does not accept a `name` prop and does not support native HTML 
 
 Always use `getSecureValue()` or `collectSecureValues()` on submit — never rely on the DOM value.
 
-### CSS inheritance and customisation
+### Font and CSS lockdown
 
-FieldShield locks several CSS properties on its internal layers (`.fieldshield-mask-layer`, `.fieldshield-real-input`, `.fieldshield-grow`) to prevent consumer styles from silently breaking cursor alignment:
+**FieldShield forces a monospace font stack on both the mask layer and the real input.** As of v1.1.4:
+
+```css
+.fieldshield-mask-layer,
+.fieldshield-real-input,
+.fieldshield-grow {
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro",
+    Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
+}
+```
+
+This is structural, not stylistic. `input.value` contains scrambled `x` characters while the mask layer renders the actual typed text with `█` for sensitive spans — two different strings that must render at identical per-character advances for the caret to stay aligned with the visible characters. Monospace is the only font class where different strings have the same partial-sum widths. Targeting `.fieldshield-mask-layer` or `.fieldshield-real-input` with a `font-family` override will reintroduce cursor drift. See the **Design-system font integration** note under [Known limitations](#design-system-font-integration) for the architectural reason.
+
+FieldShield also locks several other inheritable CSS properties on its internal layers to prevent consumer styles from silently cascading in and breaking cursor alignment:
 
 | Locked property | Why |
 |---|---|
 | `text-align: start` | `text-align: center` or `right` on a parent shifts visible text but not the cursor position, creating misalignment |
 | `text-indent: 0` | A parent `text-indent` pushes the first line of text away from where the cursor starts |
-| `text-transform: none` | `uppercase`/`lowercase` changes character advance widths in the proportional mask-layer font while the cursor tracks in monospace |
-| `font-variant-ligatures: none` | `fi`/`fl` ligatures collapse two characters into one wider glyph in the mask layer, shifting the cursor away from the displayed text |
-| `font-kerning: none` | Kern pairs shift character advance widths in proportional fonts, adding cumulative cursor drift |
+| `text-transform: none` | Changes what the mask layer *displays* asymmetrically (mask shows real characters, real input shows `x`) — visible divergence between layers |
+| `font-variant-ligatures: none` | Programming ligatures (e.g. Cascadia Code) could replace character sequences with single glyphs that occupy a different advance width |
+| `font-kerning: none` | Defense-in-depth — kerning tables on some monospace fonts can adjust advance widths for specific character pairs |
 | `hyphens: none` | Auto-hyphenation inserts break points in the mask layer that the real input does not apply |
+| `letter-spacing: 0` | A parent `letter-spacing` value cascading into one layer but not the other would desynchronise cursor position and visible text |
+| `word-spacing: 0` | Same reasoning as `letter-spacing` |
 
 **What this means in practice:** setting any of these properties on a parent element will not cascade into FieldShield fields. If you intentionally want to override one of these values — for example, to right-align a currency field — target the FieldShield class directly:
 
@@ -910,7 +929,7 @@ FieldShield locks several CSS properties on its internal layers (`.fieldshield-m
 }
 ```
 
-Re-enabling `font-variant-ligatures` or `font-kerning` on `.fieldshield-mask-layer` will reintroduce cursor drift because those properties affect character advance widths in the proportional mask font but not in the monospace real input.
+**Design-system font integration** — FieldShield fields currently render in monospace at all times, which may look out of place in a proportional-font design system. We are exploring options for a future release.
 
 ### No `id` prop override
 

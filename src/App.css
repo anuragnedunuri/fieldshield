@@ -104,10 +104,21 @@
 
 /* ─── 3. Layout ──────────────────────────────────────────────────────────── */
 
+/* Background on html ensures that when content overflows body on narrow
+ * viewports (mobile, 375px), the area behind/below body still shows the dark
+ * terminal background instead of the browser default (grey/white). */
+html {
+  background-color: var(--app-bg);
+}
+
+/* min-height (not height) on html/body/#root lets body grow with content
+ * on mobile viewports where stacked content exceeds 100vh. With `height: 100%`
+ * body was fixed at viewport height and its background stopped halfway down
+ * on long pages at 375px width. */
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {

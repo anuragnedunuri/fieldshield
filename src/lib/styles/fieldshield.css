@@ -62,6 +62,14 @@
   --fieldshield-min-height: 2.5rem; /* 40px — comfortable tap target */
   --fieldshield-border-radius: 0.375rem; /* 6px */
   --fieldshield-tag-border-radius: 0.25rem; /* 4px */
+  /* Wrapper border width. Consumers changing this MUST change it via the
+   * token (not a direct rule on .fieldshield-field-wrapper) because the
+   * mask layer and real input compute their line-height as
+   * `calc(var(--fieldshield-min-height) - 2 * var(--fieldshield-border-width))`
+   * to match the inner height of the wrapper. Overriding the border width
+   * via a direct class rule bypasses this calculation and causes 1-2px of
+   * vertical misalignment between the caret and the mask text. */
+  --fieldshield-border-width: 1px;
 
   /* Colors — light mode */
   --fieldshield-bg: #ffffff;
@@ -140,9 +148,14 @@
 .fieldshield-field-wrapper {
   position: relative;
   min-height: var(--fieldshield-min-height);
-  border: 1px solid var(--fieldshield-border-color);
+  border: var(--fieldshield-border-width) solid var(--fieldshield-border-color);
   border-radius: var(--fieldshield-border-radius);
   background-color: var(--fieldshield-bg);
+  /* Clip the transformed mask layer to wrapper bounds. When the real input
+   * auto-scrolls horizontally and the scroll-sync effect applies
+   * `translateX(-scrollLeft)` to the mask layer, the left portion of the mask
+   * text moves outside the wrapper's left edge. overflow:hidden clips it. */
+  overflow: hidden;
   transition:
     border-color var(--fieldshield-transition-duration)
       var(--fieldshield-transition-easing),
@@ -163,14 +176,35 @@
 .fieldshield-mask-layer {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center; /* Vertically centres text in single-line (input) mode */
-  padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
+  /* Match .fieldshield-real-input box model so both layers have identical
+   * content widths — critical for textarea wrap points to agree. */
+  box-sizing: border-box;
+  /* Single-line input mode vertical centering.
+   *
+   * Native <input> and <div> do not compute "line-height: normal" the same
+   * way, so any attempt to center via flex + normal/1.0/1.5 leaves a
+   * sub-pixel-to-multi-pixel offset between where the caret sits and where
+   * the mask text renders. The robust fix is to set line-height equal to
+   * the element's OWN inner height on BOTH layers — both then center their
+   * single text line using the same mechanism (the text baseline sits at a
+   * fixed ratio inside a line box that fills the element).
+   *
+   * Zero vertical padding here (vs padding-y on the real input) because
+   * line-height fills the entire inner height. Horizontal padding stays.
+   * Textarea mode below restores vertical padding and resets line-height.
+   */
+  display: block;
+  padding: 0 var(--fieldshield-padding-x);
+  line-height: calc(var(--fieldshield-min-height) - 2 * var(--fieldshield-border-width));
   color: var(--fieldshield-mask-color);
-  font-family: var(--fieldshield-font-family);
+  /* Must match .fieldshield-real-input font stack exactly — both layers render
+   * the same glyphs at the same pixel advance. Any divergence (consumer's
+   * proportional font on mask layer, monospace on real input) causes the cursor
+   * to drift from the visible character at position N from character 1 onward. */
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro",
+    Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
   font-size: var(--fieldshield-font-size);
   font-weight: inherit;
-  line-height: var(--fieldshield-line-height);
   /* ── Inherited-property lockdown ─────────────────────────────────────────
    * The mask layer and real input must agree on text geometry for the cursor
    * to stay aligned with the visible masked text. Any inherited CSS property
@@ -187,16 +221,45 @@
   hyphens: none;                /* auto-hyphenation inserts breaks at different points than real input */
   letter-spacing: 0;
   word-spacing: 0;
-  white-space: pre-wrap;
+  /* Single-line input mode: do not wrap. Long values should extend
+   * horizontally on a single line and be clipped by the wrapper's
+   * overflow:hidden after the scroll-sync transform moves them. Wrapping
+   * (pre-wrap) would break the value into multiple lines that don't exist
+   * in the real input, causing visual divergence. Overridden to pre-wrap
+   * in textarea mode below. */
+  white-space: pre;
   word-break: break-all;
   pointer-events: none;
   user-select: none;
-  overflow: hidden;
+  /* NO overflow:hidden — the wrapper's overflow:hidden clips the mask text
+   * at the wrapper bounds. If this element had overflow:hidden of its own,
+   * text beyond its *original* right edge (before the scroll-sync transform)
+   * would be clipped even if the transform should have brought it into view.
+   * The wrapper handles clipping for both the transformed mask and any
+   * overflowing text — this element stays unclipped. */
 }
 
-/** Textarea mask layer — override flex centering so text flows from the top. */
+/** Textarea mask layer — override flex centering so text flows from the top.
+ * Also restores line-height and white-space from the single-line input
+ * defaults so multi-line text renders with proper line spacing and wrapping. */
 .fieldshield-field-wrapper[data-type="textarea"] .fieldshield-mask-layer {
   display: block;
+  /* Restore vertical padding (was 0 in single-line mode because line-height
+   * filled the wrapper). Textarea needs real padding above and below the
+   * text so multi-line content has breathing room. */
+  padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
+  /* Restore the themable line-height for multi-line readability. In
+   * textarea mode the text flows top-to-bottom — there's no single-line
+   * vertical centering to worry about. */
+  line-height: var(--fieldshield-line-height);
+  white-space: pre-wrap;
+}
+
+/* Textarea also needs the real <textarea> element to use normal line-height,
+ * not the inner-wrapper-height value from the single-line input rule above,
+ * so multi-line text renders with proper line spacing. */
+.fieldshield-field-wrapper[data-type="textarea"] .fieldshield-real-input {
+  line-height: var(--fieldshield-line-height);
 }
 
 /** █ block characters rendered in the unsafe accent color for visual clarity. */
@@ -245,7 +308,8 @@
   width: 100%;
   min-height: var(--fieldshield-min-height);
   padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
-  font-family: var(--fieldshield-font-family);
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro",
+    Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
   font-size: var(--fieldshield-font-size);
   font-weight: inherit;
   line-height: var(--fieldshield-line-height);
@@ -320,6 +384,14 @@
   inset: 0;
   width: 100%;
   height: 100%;
+  /* border-box is required: with content-box + width:100%, the padding is
+   * added OUTSIDE the 100% width, making the real input's content area
+   * wider than the mask layer's by 2 × padding-x. In textarea mode this
+   * makes the textarea wrap at a different column count than the mask
+   * layer, so wrapped lines in the mask and real input diverge from line 2
+   * onward, causing visible cursor drift. border-box makes padding part of
+   * the 100% width, so both layers have identical content widths. */
+  box-sizing: border-box;
   padding: var(--fieldshield-padding-y) var(--fieldshield-padding-x);
   /* Force monospace so the cursor advances in uniform steps regardless of
    * what proportional font the consumer's app uses. The real input is always
@@ -328,7 +400,14 @@
     Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
   font-size: var(--fieldshield-font-size);
   font-weight: inherit;
-  line-height: var(--fieldshield-line-height);
+  /* line-height matches the mask layer's inner-height value in single-line
+   * input mode. Modern Chrome/Firefox honor CSS line-height on <input> for
+   * text positioning, so setting both layers to the same line-height causes
+   * both to center their single text line at the same vertical position.
+   * Textarea mode overrides this to the themable line-height variable
+   * (see .fieldshield-field-wrapper[data-type="textarea"] .fieldshield-real-input
+   * below) so multi-line text renders with normal 1.5 spacing. */
+  line-height: calc(var(--fieldshield-min-height) - 2 * var(--fieldshield-border-width));
   text-align: start;  /* cursor must start from the same edge as the mask layer text */
   text-indent: 0;     /* first-line indent would offset cursor from mask layer text */
   letter-spacing: 0;

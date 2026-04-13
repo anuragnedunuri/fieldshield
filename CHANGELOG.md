@@ -11,6 +11,108 @@ Pattern updates are **minor releases**, not patches. A new pattern could start f
 
 ---
 
+## [1.1.4] — 2026-04-13
+
+> All v1.1.x releases have been CSS and UX refinements. The Web Worker
+> isolation, DOM scrambling, `MessageChannel`-based `GET_TRUTH` delivery,
+> clipboard interception, and pattern detection architecture are unchanged
+> since v1.0.0. Consumers who reviewed FieldShield's threat model at v1.0
+> adoption do not need to re-review their security assumptions for any
+> 1.1.x upgrade.
+
+### Fixed
+
+- Cursor drift root cause — identified and fixed. v1.1.1 forced
+  monospace on `.fieldshield-real-input` but left `.fieldshield-mask-layer`
+  inheriting the consumer's proportional font. Because the real input
+  contains scrambled `xxxxx` and the mask layer contains the actual
+  typed characters with `█` for sensitive spans, the two layers are
+  rendering DIFFERENT strings. In proportional fonts different strings
+  have different per-character advance widths, so the caret (positioned
+  by the browser using monospace advances in the real input) landed
+  over the wrong glyph in the mask layer starting from character 1.
+  Pattern detection amplified the drift further because `█` in most
+  proportional fonts has a different advance than `x` in monospace.
+
+  **Fix:** apply the same monospace font stack
+  (`ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas,
+  "DejaVu Sans Mono", monospace !important`) to `.fieldshield-mask-layer`
+  and `.fieldshield-grow` in addition to `.fieldshield-real-input`. Both
+  layers now render every glyph at identical pixel advance regardless
+  of the consumer's page font.
+
+- Horizontal scroll sync — when typed content exceeded the field's
+  visible width, the real input auto-scrolled its content to keep the
+  caret visible but the mask layer (`overflow: hidden`, no native scroll)
+  stayed put, leaving the caret on top of the wrong character. Added a
+  scroll-sync effect that reads `input.scrollLeft`/`scrollTop` on every
+  scroll event and writes an inverse `transform: translate(...)` to the
+  mask layer. Scroll sync now works for both single-line and textarea.
+
+- Vertical alignment (cursor above / below text) — replaced
+  `display: flex; align-items: center` on the mask layer with an explicit
+  `line-height` matched on both layers:
+  `line-height: calc(var(--fieldshield-min-height) - 2 * var(--fieldshield-border-width))`.
+  Native `<input>` and `<div>` compute `line-height: normal` inconsistently,
+  so flex-centering produced a sub-pixel-to-multi-pixel offset between
+  the caret and the mask text. Setting an explicit matching line-height
+  on both layers makes them center identically.
+
+- Textarea line-wrap drift — added `box-sizing: border-box` to
+  `.fieldshield-real-input`. Previously content-box + `width: 100%` +
+  padding gave the real input a content area 24px wider than the mask
+  layer, so textarea text wrapped at different column counts in each
+  layer and the cursor drifted from the second wrapped line onward.
+
+- Demo app mobile background — on narrow viewports (375px mobile) the
+  dark terminal background stopped halfway down the page and showed the
+  browser default grey below. Root cause: `html, body, #root { height:
+  100% }` fixed body at viewport height, so when stacked content exceeded
+  100vh the background ended at the body border. Fixed by changing to
+  `min-height: 100%` so body grows with content, and adding
+  `background-color: var(--app-bg)` to `html` as a belt-and-suspenders
+  fallback. Demo-app-only change — library consumers unaffected.
+
+### Added
+
+- New CSS token `--fieldshield-border-width` (default `1px`). The wrapper
+  border width is now a design token. The `line-height` calc on both
+  layers derives from this token, so consumers who need to change the
+  border width via the token get correct vertical centering
+  automatically.
+
+### Tests
+
+- 5 new Vitest unit tests (`FieldShieldInput — mask layer font
+  consistency`) covering the overlay architecture invariants the font
+  fix depends on. Total: 459 unit tests (was 454).
+- 4 new Playwright E2E tests in a new `e2e/cursor-alignment.spec.ts`
+  file: first-character cursor position, per-character tracking through
+  structured SSN input, pattern-detection-does-not-move-cursor
+  regression, and backspace-from-mid-string. Total: 49 E2E tests
+  (was 45).
+
+### Known limitations
+
+- **Design-system font integration** — FieldShield fields currently render
+  in monospace at all times. This is a structural consequence of the
+  architecture: `input.value` is scrambled to `xxxxx` for security (so
+  DOM scraping sees no real data), while the visible mask layer renders
+  the actual typed characters with `█` for sensitive spans. In
+  proportional fonts, `xxxxx` and `Hello` have different total widths —
+  the caret position (computed from the real input's character advances)
+  diverges from where the mask layer paints the corresponding character.
+  The only way to guarantee advance widths match across two DIFFERENT
+  strings is to use a font where every character has the same advance
+  width — monospace.
+
+  Consumer font support would require either (a) putting real characters
+  in `input.value` (breaks the security model) or (b) per-character
+  runtime measurement (expensive and fragile). We are exploring options
+  for this limitation in a future release.
+
+---
+
 ## [1.1.3] — 2026-04-11
 
 ### Fixed
